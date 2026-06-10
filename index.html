@@ -371,17 +371,26 @@ async function connectOSM() {
     localStorage.removeItem('osm_oauth_result');
 
     let result;
-    try { result = JSON.parse(raw); } catch(e) { showAuthError('Invalid callback data.'); return; }
+    try { result = JSON.parse(raw); } catch(e) { showAuthError('Invalid callback data: ' + raw); return; }
 
     if (result.error) { showAuthError('OSM auth error: ' + result.error); return; }
-    if (result.state !== sessionStorage.getItem('pkce_state')) { showAuthError('OAuth state mismatch — please try again.'); return; }
 
-    const token = await exchangeCode(result.code, sessionStorage.getItem('pkce_verifier'));
+    const storedState = sessionStorage.getItem('pkce_state');
+    if (result.state !== storedState) {
+      showAuthError(`State mismatch. Got: ${result.state} Expected: ${storedState}`); return;
+    }
+
+    const verifier = sessionStorage.getItem('pkce_verifier');
+    document.getElementById('auth-label').textContent = 'Exchanging token…';
+
+    const token = await exchangeCode(result.code, verifier);
     if (token) {
       osmToken = token;
       sessionStorage.removeItem('pkce_verifier');
       sessionStorage.removeItem('pkce_state');
       setAuthConnected();
+    } else {
+      showAuthError('Token exchange returned null — check console for details');
     }
   }, 500);
 
@@ -399,22 +408,26 @@ async function connectOSM() {
 
 async function exchangeCode(code, verifier) {
   try {
+    const body = new URLSearchParams({
+      grant_type:    'authorization_code',
+      client_id:     CLIENT_ID,
+      redirect_uri:  REDIRECT_URI,
+      code,
+      code_verifier: verifier
+    });
     const res = await fetch(OSM_TOKEN_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: new URLSearchParams({
-        grant_type:    'authorization_code',
-        client_id:     CLIENT_ID,
-        redirect_uri:  REDIRECT_URI,
-        code,
-        code_verifier: verifier
-      })
+      body
     });
-    if (!res.ok) { showAuthError(`Token exchange failed: ${res.status}`); return null; }
-    const data = await res.json();
-    return data.access_token || null;
+    const text = await res.text();
+    if (!res.ok) { showAuthError(`Token exchange failed ${res.status}: ${text}`); return null; }
+    let data;
+    try { data = JSON.parse(text); } catch(e) { showAuthError('Token response not JSON: ' + text); return null; }
+    if (!data.access_token) { showAuthError('No access_token in response: ' + text); return null; }
+    return data.access_token;
   } catch(e) {
-    showAuthError('Token exchange error: ' + e.message);
+    showAuthError('Token exchange network error: ' + e.message);
     return null;
   }
 }
@@ -428,7 +441,14 @@ function setAuthConnected() {
 }
 
 function showAuthError(msg) {
-  alert('OSM Auth error: ' + msg);
+  console.error('Auth error:', msg);
+  const badge = document.getElementById('auth-badge');
+  const label = document.getElementById('auth-label');
+  badge.style.borderColor = 'rgba(248,113,113,.5)';
+  badge.style.background  = 'rgba(248,113,113,.1)';
+  label.style.color = '#f87171';
+  label.textContent = 'Auth failed — see console';
+  alert('Auth error: ' + msg);
 }
 
 // ── MAP INIT ──────────────────────────────────────────────────────────────────
