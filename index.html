@@ -490,6 +490,31 @@ function initMap() {
       return btn;
     }
   });
+  // Coordinates display control
+  const CoordsControl = L.Control.extend({
+    options: { position: 'bottomleft' },
+    onAdd() {
+      const div = L.DomUtil.create('div', '');
+      div.id = 'coords-display';
+      div.style.cssText = 'background:#111827ee;border:1px solid #374151;color:#9ca3af;font-size:11px;font-family:monospace;padding:5px 10px;border-radius:8px;pointer-events:none;white-space:nowrap;box-shadow:0 4px 12px rgba(0,0,0,.5)';
+      div.textContent = '— , —';
+      return div;
+    }
+  });
+  new CoordsControl().addTo(map);
+
+  map.on('mousemove', function(e) {
+    const el = document.getElementById('coords-display');
+    if (!el) return;
+    const lat = e.latlng.lat.toFixed(5);
+    const lng = e.latlng.lng.toFixed(5);
+    el.textContent = `${lat}, ${lng}`;
+  });
+  map.on('mouseout', function() {
+    const el = document.getElementById('coords-display');
+    if (el) el.textContent = '— , —';
+  });
+
   new PeekControl().addTo(map);
 
   document.addEventListener('keydown', e => {
