@@ -631,7 +631,10 @@ function renderTanks() {
     const staged=getStagedChange(el.type,el.id);
     const content=staged?(staged.action==='delete'?null:staged.new_content):(el.tags||{}).content;
     const color=content?(CONTENT_COLOR[content]||'#9ca3af'):'#4b5563';
-    const poly=L.polygon(latlngs,{fillColor:color,fillOpacity:.5,color:staged?'#fff':(content?color:'#6b7280'),weight:staged?2.5:1.5});
+    const cdColor=checkDateBorderColor(el.tags);
+    const borderColor=staged?'#fff':(cdColor||( content?color:'#6b7280'));
+    const borderWeight=staged?2.5:(cdColor?3:1.5);
+    const poly=L.polygon(latlngs,{fillColor:color,fillOpacity:.5,color:borderColor,weight:borderWeight});
     poly.on('click',()=>openTankPopup(el));
     el._marker=poly; polys.push(poly);
   });
@@ -644,7 +647,10 @@ function refreshMarker(type,id) {
   const staged=getStagedChange(type,id);
   const content=staged?(staged.action==='delete'?null:staged.new_content):(el.tags||{}).content;
   const color=content?(CONTENT_COLOR[content]||'#9ca3af'):'#4b5563';
-  el._marker.setStyle({fillColor:color,fillOpacity:.5,color:staged?'#fff':(content?color:'#6b7280'),weight:staged?2.5:1.5});
+  const cdColor=checkDateBorderColor(el.tags);
+  const borderColor=staged?'#fff':(cdColor||(content?color:'#6b7280'));
+  const borderWeight=staged?2.5:(cdColor?3:1.5);
+  el._marker.setStyle({fillColor:color,fillOpacity:.5,color:borderColor,weight:borderWeight});
 }
 
 // ── POPUP ─────────────────────────────────────────────────────────────────────
@@ -749,6 +755,15 @@ function selectContent(elId,val,color){
 // ── STAGING ───────────────────────────────────────────────────────────────────
 function getStagedChange(type,id){return stagedChanges.find(c=>c.osm_type===type&&c.osm_id===id)||null;}
 function todayISO(){return new Date().toISOString().slice(0,10);}
+
+function checkDateBorderColor(tags) {
+  const cd = (tags||{}).check_date;
+  if (!cd) return null;
+  const days = Math.floor((new Date(todayISO()) - new Date(cd)) / 86400000);
+  if (days === 0)   return '#ffffff'; // white  — checked today (high contrast on any fill)
+  if (days <= 30)   return '#4ade80'; // green  — checked within 30 days
+  return '#6b7280';                   // grey   — checked 30+ days ago
+}
 
 function stageFixme(type, id, name) {
   if (stagedChanges.length >= 100) { alert('Staging area full.'); return; }
