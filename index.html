@@ -490,14 +490,26 @@ function initMap() {
       return btn;
     }
   });
-  // Coordinates display control
+  // Coordinates display control — shows at zoom 15+, click to copy
   const CoordsControl = L.Control.extend({
     options: { position: 'bottomleft' },
     onAdd() {
       const div = L.DomUtil.create('div', '');
       div.id = 'coords-display';
-      div.style.cssText = 'background:#111827ee;border:1px solid #374151;color:#9ca3af;font-size:11px;font-family:monospace;padding:5px 10px;border-radius:8px;pointer-events:none;white-space:nowrap;box-shadow:0 4px 12px rgba(0,0,0,.5)';
+      div.style.cssText = 'display:none;background:#111827ee;border:1px solid #374151;color:#9ca3af;font-size:11px;font-family:monospace;padding:5px 10px;border-radius:8px;white-space:nowrap;box-shadow:0 4px 12px rgba(0,0,0,.5);cursor:pointer;user-select:none;';
+      div.title = 'Click to copy coordinates';
       div.textContent = '— , —';
+      L.DomEvent.disableClickPropagation(div);
+      L.DomEvent.on(div, 'click', () => {
+        const txt = div.textContent;
+        if (txt === '— , —') return;
+        navigator.clipboard.writeText(txt).then(() => {
+          const orig = div.style.color;
+          div.style.color = '#4ade80';
+          div.style.borderColor = 'rgba(74,222,128,.4)';
+          setTimeout(() => { div.style.color = '#9ca3af'; div.style.borderColor = '#374151'; }, 800);
+        });
+      });
       return div;
     }
   });
@@ -506,13 +518,17 @@ function initMap() {
   map.on('mousemove', function(e) {
     const el = document.getElementById('coords-display');
     if (!el) return;
-    const lat = e.latlng.lat.toFixed(5);
-    const lng = e.latlng.lng.toFixed(5);
-    el.textContent = `${lat}, ${lng}`;
+    if (map.getZoom() < 15) { el.style.display = 'none'; return; }
+    el.style.display = 'block';
+    el.textContent = e.latlng.lat.toFixed(5) + ', ' + e.latlng.lng.toFixed(5);
   });
   map.on('mouseout', function() {
     const el = document.getElementById('coords-display');
-    if (el) el.textContent = '— , —';
+    if (el) el.style.display = 'none';
+  });
+  map.on('zoomend', function() {
+    const el = document.getElementById('coords-display');
+    if (el && map.getZoom() < 15) el.style.display = 'none';
   });
 
   new PeekControl().addTo(map);
