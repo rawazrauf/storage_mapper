@@ -388,9 +388,11 @@ async function connectOSM() {
   // Stop polling if popup is closed without completing auth
   const popupCheck = setInterval(() => {
     if (popup.closed) {
-      clearInterval(pollInterval);
       clearInterval(popupCheck);
-      localStorage.removeItem('osm_oauth_result');
+      // Give the poll one last chance to read localStorage before stopping
+      setTimeout(() => {
+        clearInterval(pollInterval);
+      }, 2000);
     }
   }, 1000);
 }
