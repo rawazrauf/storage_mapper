@@ -4,12 +4,12 @@
 <meta charset="UTF-8">
 <title>Storage Mapper — Authenticating…</title>
 <style>
-  * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { background: #030712; color: #f3f4f6; font-family: 'Plus Jakarta Sans', sans-serif; display: flex; align-items: center; justify-content: center; height: 100vh; }
-  .box { text-align: center; }
-  .icon { font-size: 48px; margin-bottom: 16px; }
-  h1 { font-size: 16px; font-weight: 700; color: #f59e0b; margin-bottom: 8px; }
-  p { font-size: 12px; color: #6b7280; }
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { background: #030712; color: #f3f4f6; font-family: 'Plus Jakarta Sans', sans-serif; display: flex; align-items: center; justify-content: center; height: 100vh; }
+.box { text-align: center; }
+.icon { font-size: 48px; margin-bottom: 16px; }
+h1 { font-size: 16px; font-weight: 700; color: #f59e0b; margin-bottom: 8px; }
+p { font-size: 12px; color: #6b7280; }
 </style>
 </head>
 <body>
@@ -19,37 +19,26 @@
   <p id="detail">Please wait</p>
 </div>
 <script>
-(async function() {
-  const params = new URLSearchParams(window.location.search);
-  const code  = params.get('code');
-  const state = params.get('state');
-  const error = params.get('error');
+const params = new URLSearchParams(window.location.search);
+const code   = params.get('code');
+const state  = params.get('state');
+const error  = params.get('error');
 
-  if (error) {
-    document.getElementById('status').textContent = 'Authentication cancelled';
-    document.getElementById('detail').textContent = error;
-    if (window.opener) window.opener.postMessage({ type: 'osm_oauth_error', error }, '*');
-    setTimeout(() => window.close(), 2000);
-    return;
-  }
-
-  if (!code) {
-    document.getElementById('status').textContent = 'No code received';
-    setTimeout(() => window.close(), 2000);
-    return;
-  }
-
-  // Send code + state back to opener, let it do the token exchange
-  if (window.opener) {
-    window.opener.postMessage({ type: 'osm_oauth_code', code, state }, '*');
-    document.getElementById('status').textContent = 'Authenticated ✓';
-    document.getElementById('detail').textContent = 'You can close this window';
-    setTimeout(() => window.close(), 1500);
-  } else {
-    document.getElementById('status').textContent = 'Error: no opener window';
-    document.getElementById('detail').textContent = 'Please close this and try again';
-  }
-})();
+if (error) {
+  document.getElementById('status').textContent = 'Authentication cancelled';
+  document.getElementById('detail').textContent = error;
+  localStorage.setItem('osm_oauth_result', JSON.stringify({ error }));
+  setTimeout(() => window.close(), 2000);
+} else if (code) {
+  // Store code in localStorage so the opener can pick it up via polling
+  localStorage.setItem('osm_oauth_result', JSON.stringify({ code, state }));
+  document.getElementById('status').textContent = 'Authenticated ✓';
+  document.getElementById('detail').textContent = 'You can close this window';
+  setTimeout(() => window.close(), 1500);
+} else {
+  document.getElementById('status').textContent = 'No code received';
+  document.getElementById('detail').textContent = 'Please close this and try again';
+}
 </script>
 </body>
 </html>
