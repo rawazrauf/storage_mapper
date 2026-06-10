@@ -948,7 +948,18 @@ async function submitChangeset(){
 
     prog.innerHTML=`✓ <a href="https://www.openstreetmap.org/changeset/${csId}" target="_blank" style="color:#f59e0b">Changeset #${csId}</a> submitted successfully!${failed.length?` (${failed.length} items skipped)`:''}`;
     const copy=[...stagedChanges]; stagedChanges=[];
-    copy.forEach(c=>refreshMarker(c.osm_type,c.osm_id));
+    copy.forEach(c=>{
+      // Update local tag cache so polygon colour reflects the submitted change
+      const el=tankFeatures.find(f=>f.type===c.osm_type&&f.id===c.osm_id);
+      if(el){
+        el.tags = el.tags || {};
+        if(c.action==='delete')   { delete el.tags.content; }
+        else if(c.action==='fixme'){ el.tags.fixme='not a storage tank'; }
+        else                       { el.tags.content=c.new_content; }
+        el.tags.check_date=c.check_date;
+      }
+      refreshMarker(c.osm_type,c.osm_id);
+    });
     refreshDrawer();
     btn.disabled=false;
     btn.textContent='Submit changes';
