@@ -1,0 +1,871 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Storage Mapper</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { height: 100%; font-family: 'Plus Jakarta Sans', sans-serif; background: #030712; color: #f3f4f6; overflow: hidden; }
+#app { display: flex; flex-direction: column; height: 100vh; }
+
+/* HEADER */
+#header { height: 56px; flex-shrink: 0; background: #111827; border-bottom: 1px solid #1f2937; display: flex; align-items: center; padding: 0 16px; gap: 12px; z-index: 500; }
+.header-logo { display: flex; align-items: center; gap: 8px; }
+.logo-icon { width: 32px; height: 32px; border-radius: 8px; background: linear-gradient(135deg,#f59e0b,#b45309); display: flex; align-items: center; justify-content: center; }
+.logo-icon svg { width: 18px; height: 18px; }
+#header h1 { font-size: 15px; font-weight: 800; color: #fff; white-space: nowrap; }
+.header-spacer { flex: 1; }
+.header-btns { display: flex; gap: 8px; align-items: center; }
+
+/* AUTH BADGE */
+#auth-badge { display: flex; align-items: center; gap: 6px; font-size: 11px; font-weight: 600; padding: 5px 10px; border-radius: 6px; border: 1px solid #374151; background: #1f2937; color: #9ca3af; cursor: pointer; white-space: nowrap; }
+#auth-badge.connected { border-color: rgba(74,222,128,.4); background: rgba(74,222,128,.1); color: #4ade80; cursor: default; }
+#auth-badge .dot { width: 7px; height: 7px; border-radius: 50%; background: #374151; flex-shrink: 0; }
+#auth-badge.connected .dot { background: #4ade80; }
+
+/* STAGED DRAWER */
+#staged-drawer { flex-shrink: 0; background: #111827; border-bottom: 1px solid #1f2937; display: none; }
+.drawer-bar { display: flex; align-items: center; gap: 10px; padding: 8px 16px; border-bottom: 1px solid #1f2937; }
+.drawer-label { font-size: 11px; font-weight: 700; color: #f59e0b; text-transform: uppercase; letter-spacing: .05em; white-space: nowrap; }
+.gauge-wrap { flex: 1; display: flex; align-items: center; gap: 8px; }
+.gauge-track { flex: 1; height: 3px; background: #1f2937; border-radius: 2px; overflow: hidden; }
+.gauge-fill { height: 100%; background: #f59e0b; border-radius: 2px; width: 0%; transition: width .3s; }
+.gauge-label { font-size: 10px; font-family: monospace; color: #6b7280; white-space: nowrap; }
+#chip-list { display: flex; gap: 6px; padding: 6px 16px; overflow-x: auto; min-height: 36px; }
+
+/* BODY */
+#body { display: flex; flex: 1; min-height: 0; }
+
+/* SIDEBAR */
+#sidebar { width: 280px; flex-shrink: 0; background: #111827; border-right: 1px solid #1f2937; display: flex; flex-direction: column; overflow: hidden; transition: transform .3s; z-index: 400; }
+#sidebar-scroll { flex: 1; overflow-y: auto; padding: 12px; }
+#sidebar-footer { padding: 8px 12px; border-top: 1px solid #1f2937; text-align: center; }
+#sidebar-footer p { font-size: 9px; color: #4b5563; }
+#sidebar-footer a { color: #4b5563; }
+
+/* MAP */
+#map-wrap { flex: 1; position: relative; }
+#map { width: 100%; height: 100%; }
+
+/* SIDEBAR COMPONENTS */
+.section { margin-bottom: 14px; }
+.section-label { font-size: 10px; font-weight: 700; color: #6b7280; text-transform: uppercase; letter-spacing: .06em; margin-bottom: 8px; }
+.stats-grid { display: grid; grid-template-columns: repeat(3,1fr); gap: 6px; }
+.stat-card { background: #030712; border: 1px solid #1f2937; border-radius: 10px; padding: 8px 10px; }
+.stat-card .sk { font-size: 10px; color: #6b7280; font-weight: 500; display: block; margin-bottom: 2px; }
+.stat-card .sv { font-size: 20px; font-weight: 800; }
+.sv-amber{color:#f59e0b;} .sv-green{color:#4ade80;} .sv-red{color:#f87171;}
+
+/* loader */
+#loader-box { background: #030712; border: 1px solid rgba(245,158,11,.2); border-radius: 10px; padding: 10px 12px; margin-bottom: 10px; display: none; }
+.loader-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
+.loader-text { font-size: 11px; font-weight: 700; color: #f59e0b; display: flex; align-items: center; gap: 6px; }
+.loader-timer { font-size: 10px; font-family: monospace; color: #4b5563; }
+.loader-bar-track { height: 3px; background: #1f2937; border-radius: 2px; overflow: hidden; }
+.loader-bar-fill { height: 100%; background: #f59e0b; border-radius: 2px; width: 10%; transition: width .3s; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.spin { animation: spin .7s linear infinite; display: inline-block; }
+
+/* basemap */
+.basemap-list { background: #030712; border: 1px solid #1f2937; border-radius: 8px; overflow: hidden; }
+.basemap-btn { display: block; width: 100%; text-align: left; padding: 8px 12px; font-size: 11px; font-weight: 700; background: none; border: none; color: #9ca3af; cursor: pointer; font-family: inherit; border-bottom: 1px solid #1f2937; }
+.basemap-btn:last-child { border-bottom: none; }
+.basemap-btn:hover { background: #111827; color: #fff; }
+.basemap-btn.active { background: #92400e; color: #fef3c7; }
+
+/* legend */
+.legend-list { background: #030712; border: 1px solid #1f2937; border-radius: 8px; padding: 10px 12px; }
+.legend-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px; font-size: 10px; color: #9ca3af; }
+.legend-row:last-child { margin-bottom: 0; }
+.legend-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+
+/* shortcuts */
+.shortcuts-list { background: #030712; border: 1px solid #1f2937; border-radius: 8px; padding: 8px 12px; }
+.shortcut-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; font-size: 10px; color: #6b7280; }
+.shortcut-row:last-child { margin-bottom: 0; }
+kbd { background: #1f2937; color: #d1d5db; font-family: monospace; font-size: 10px; padding: 1px 5px; border-radius: 3px; }
+
+.reload-btn { width: 100%; padding: 8px; border-radius: 8px; font-size: 11px; font-weight: 700; background: rgba(245,158,11,.1); border: 1px solid rgba(245,158,11,.3); color: #f59e0b; cursor: pointer; font-family: inherit; display: flex; align-items: center; justify-content: center; gap: 6px; }
+.reload-btn:hover { background: rgba(245,158,11,.2); }
+
+/* BUTTONS */
+.btn { font-family: inherit; font-weight: 700; cursor: pointer; border: none; border-radius: 6px; font-size: 11px; padding: 6px 14px; transition: opacity .15s; }
+.btn:hover { opacity: .85; } .btn:disabled { opacity: .4; cursor: not-allowed; }
+.btn-amber { background: #f59e0b; color: #111; }
+.btn-ghost { background: #1f2937; color: #9ca3af; border: 1px solid #374151; }
+.btn-ghost:hover { color: #fff; }
+.btn-red { background: rgba(239,68,68,.15); color: #f87171; border: 1px solid rgba(239,68,68,.3); }
+.badge { background: #f59e0b; color: #111; font-size: 10px; font-weight: 800; padding: 1px 6px; border-radius: 10px; }
+.badge-dim { background: #374151; color: #9ca3af; font-size: 10px; font-weight: 800; padding: 1px 6px; border-radius: 10px; }
+
+/* CHIPS */
+.chip { display: inline-flex; align-items: center; gap: 6px; flex-shrink: 0; background: #1f2937; border: 1px solid #374151; border-radius: 4px; padding: 4px 8px; font-size: 10px; font-family: monospace; color: #d1d5db; cursor: pointer; }
+.chip:hover { border-color: rgba(245,158,11,.5); }
+.chip-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+.chip-del { color: #6b7280; font-size: 12px; margin-left: 2px; }
+.chip-del:hover { color: #f87171; }
+
+/* POPUP */
+.leaflet-popup-content-wrapper { background: #1f2937 !important; border: 1px solid #374151 !important; border-radius: 10px !important; box-shadow: 0 8px 32px rgba(0,0,0,.6) !important; padding: 0 !important; min-width: 280px; }
+.leaflet-popup-tip { background: #1f2937 !important; }
+.leaflet-popup-content { margin: 0 !important; }
+.leaflet-popup-close-button { color: #6b7280 !important; font-size: 18px !important; right: 10px !important; top: 8px !important; }
+.leaflet-container { background: #030712 !important; }
+.leaflet-bar { border: none !important; box-shadow: 0 4px 6px rgba(0,0,0,.4) !important; }
+.leaflet-bar a { background: #1f2937 !important; color: #f3f4f6 !important; border-bottom: 1px solid #374151 !important; }
+.leaflet-bar a:hover { background: #374151 !important; }
+.leaflet-control-attribution { background: rgba(3,7,18,.8) !important; color: #4b5563 !important; font-size: 9px !important; }
+.leaflet-control-attribution a { color: #4b5563 !important; }
+.pu { padding: 14px 16px; }
+.pu-title { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #374151; padding-bottom: 8px; margin-bottom: 10px; padding-right: 20px; }
+.pu-id { font-size: 9px; background: #111827; color: #9ca3af; padding: 2px 6px; border-radius: 4px; font-family: monospace; border: 1px solid #374151; }
+.pu-meta { display: flex; justify-content: space-between; margin-bottom: 4px; font-size: 11px; }
+.pu-key { font-size: 9px; color: #6b7280; text-transform: uppercase; font-weight: 700; letter-spacing: .05em; }
+.pu-val { color: #d1d5db; font-weight: 500; max-width: 170px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pu-tag-box { border-radius: 8px; padding: 8px 10px; margin-bottom: 10px; }
+.pu-tag-box.staged { background: rgba(245,158,11,.1); border: 1px solid rgba(245,158,11,.3); }
+.pu-tag-box.current { background: #111827; border: 1px solid #374151; }
+.pu-tag-box.none { color: #6b7280; font-style: italic; font-size: 11px; margin-bottom: 10px; }
+.pu-tag-label { font-size: 9px; text-transform: uppercase; font-weight: 700; letter-spacing: .05em; margin-bottom: 4px; color: #9ca3af; }
+.pu-grid-label { font-size: 9px; color: #9ca3af; text-transform: uppercase; font-weight: 700; letter-spacing: .05em; margin-bottom: 6px; }
+.pu-grid { display: grid; grid-template-columns: repeat(3,1fr); gap: 4px; margin-bottom: 10px; }
+.pu-btn { font-size: 10px; font-weight: 700; padding: 5px 4px; border-radius: 4px; border: 1px solid; cursor: pointer; text-align: center; background: #111827; font-family: inherit; transition: filter .12s; }
+.pu-btn:hover { filter: brightness(1.2); }
+.pu-btn.sel { color: #111 !important; }
+.pu-actions { display: flex; gap: 6px; }
+.pu-action-btn { flex: 1; padding: 7px 4px; border-radius: 8px; border: 1px solid; font-size: 11px; font-weight: 700; cursor: pointer; font-family: inherit; transition: opacity .15s; }
+.pu-action-btn:hover { opacity: .8; }
+.pill { border: 1px solid; border-radius: 4px; padding: 1px 8px; font-size: 11px; font-weight: 700; display: inline-block; }
+
+/* MODAL */
+#modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,.7); z-index: 2000; align-items: center; justify-content: center; }
+#modal-box { background: #111827; border: 1px solid #374151; border-radius: 12px; width: 100%; max-width: 440px; margin: 16px; padding: 24px; }
+#modal-box h2 { font-size: 13px; font-weight: 800; color: #f59e0b; text-transform: uppercase; letter-spacing: .05em; margin-bottom: 6px; }
+#modal-box p { font-size: 12px; color: #9ca3af; margin-bottom: 18px; line-height: 1.5; }
+.modal-cs { background: #030712; border: 1px solid #1f2937; border-radius: 8px; padding: 10px 12px; font-size: 10px; font-family: monospace; color: #9ca3af; margin-bottom: 16px; line-height: 1.6; }
+.modal-cs .k { color: #f59e0b; }
+.modal-actions { display: flex; gap: 8px; justify-content: flex-end; }
+#modal-error { display: none; background: rgba(239,68,68,.1); border: 1px solid rgba(239,68,68,.3); border-radius: 8px; padding: 8px 12px; font-size: 11px; color: #f87171; margin-bottom: 12px; line-height: 1.5; }
+#modal-progress { display: none; font-size: 11px; font-family: monospace; color: #4ade80; margin-bottom: 12px; line-height: 1.6; }
+
+/* MOBILE */
+#mobile-menu-btn { display: none; background: none; border: none; color: #9ca3af; cursor: pointer; padding: 4px; }
+#drawer-backdrop { display: none; position: fixed; inset: 0; background: rgba(0,0,0,.7); z-index: 390; }
+@media (max-width: 1023px) {
+  #mobile-menu-btn { display: block; }
+  #sidebar { position: fixed; top: 0; left: 0; bottom: 0; z-index: 400; transform: translateX(-100%); }
+  #sidebar.open { transform: translateX(0); }
+  #drawer-backdrop.open { display: block; }
+}
+::-webkit-scrollbar{width:4px;} ::-webkit-scrollbar-track{background:#111827;} ::-webkit-scrollbar-thumb{background:#374151;border-radius:2px;}
+</style>
+</head>
+<body>
+<div id="app">
+
+<!-- HEADER -->
+<div id="header">
+  <button id="mobile-menu-btn" onclick="toggleSidebar()">
+    <svg width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4 6h16M4 12h16M4 18h16"/></svg>
+  </button>
+  <div class="header-logo">
+    <div class="logo-icon">
+      <svg fill="none" stroke="white" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M20 7H4a2 2 0 00-2 2v6a2 2 0 002 2h16a2 2 0 002-2V9a2 2 0 00-2-2zM8 7V5a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>
+    </div>
+    <h1>Storage Mapper</h1>
+  </div>
+  <div class="header-spacer"></div>
+  <div class="header-btns">
+    <div id="auth-badge" onclick="connectOSM()">
+      <span class="dot"></span>
+      <span id="auth-label">Connect to OSM</span>
+    </div>
+    <button id="btn-staged" class="btn btn-ghost" onclick="toggleStagedDrawer()" disabled style="opacity:.4">
+      Staged <span id="header-count" class="badge-dim">0</span>
+    </button>
+    <button id="btn-submit" class="btn btn-amber" onclick="openModal()" disabled style="opacity:.4">Submit to OSM</button>
+  </div>
+</div>
+
+<!-- STAGED DRAWER -->
+<div id="staged-drawer">
+  <div class="drawer-bar">
+    <span class="drawer-label">Staged Changes</span>
+    <span id="drawer-badge" class="badge">0</span>
+    <div class="gauge-wrap">
+      <div class="gauge-track"><div id="gauge-fill" class="gauge-fill"></div></div>
+      <span id="gauge-label" class="gauge-label">0 / 100</span>
+    </div>
+    <button class="btn btn-ghost" onclick="clearAllStaged()">Clear all</button>
+    <button class="btn btn-amber" onclick="openModal()">Submit →</button>
+  </div>
+  <div id="chip-list"></div>
+</div>
+
+<!-- BODY -->
+<div id="body">
+  <div id="drawer-backdrop" onclick="toggleSidebar()"></div>
+
+  <!-- SIDEBAR -->
+  <div id="sidebar">
+    <div id="sidebar-scroll">
+      <div class="section">
+        <div class="section-label">Stats</div>
+        <div class="stats-grid">
+          <div class="stat-card"><span class="sk">Tanks</span><span class="sv sv-amber" id="stat-total">—</span></div>
+          <div class="stat-card"><span class="sk">Tagged</span><span class="sv sv-green" id="stat-tagged">—</span></div>
+          <div class="stat-card"><span class="sk">Untagged</span><span class="sv sv-red" id="stat-untagged">—</span></div>
+        </div>
+      </div>
+      <div id="loader-box">
+        <div class="loader-row">
+          <span class="loader-text"><span class="spin" id="loader-spin">⟳</span> <span id="loader-text">Loading…</span></span>
+          <span class="loader-timer" id="loader-timer">0.0s</span>
+        </div>
+        <div class="loader-bar-track"><div class="loader-bar-fill" id="loader-bar"></div></div>
+      </div>
+      <div class="section">
+        <button class="reload-btn" onclick="loadTanks()">
+          <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h5M20 20v-5h-5M4 9a9 9 0 0114.7-3.7M20 15A9 9 0 015.3 18.7"/></svg>
+          Reload from Overpass
+        </button>
+      </div>
+      <div class="section">
+        <div class="section-label">Base Map</div>
+        <div class="basemap-list">
+          <button id="bm-satellite" class="basemap-btn active" onclick="changeBaseMap('satellite')">🛰️ Esri Satellite</button>
+          <button id="bm-clarity"   class="basemap-btn"        onclick="changeBaseMap('clarity')">🛰️ Esri Clarity</button>
+          <button id="bm-dark"      class="basemap-btn"        onclick="changeBaseMap('dark')">🌌 Black Canvas</button>
+          <button id="bm-streets"   class="basemap-btn"        onclick="changeBaseMap('streets')">🗺️ OpenStreetMap</button>
+        </div>
+      </div>
+      <div class="section">
+        <div class="section-label">Content Legend</div>
+        <div class="legend-list" id="legend-list">
+          <div class="legend-row"><span>Untagged</span><span class="legend-dot" style="background:#4b5563;border:1px solid #6b7280"></span></div>
+          <div class="legend-row"><span>Staged change</span><span class="legend-dot" style="background:#f59e0b;border:2px solid #fff"></span></div>
+        </div>
+      </div>
+      <div class="section">
+        <div class="section-label">Keyboard Shortcuts</div>
+        <div class="shortcuts-list">
+          <div class="shortcut-row"><span>Next unreviewed tank</span><kbd>N</kbd></div>
+          <div class="shortcut-row"><span>Toggle polygons</span><kbd>Space</kbd></div>
+          <div class="shortcut-row"><span>Cycle background</span><kbd>B</kbd></div>
+        </div>
+      </div>
+    </div>
+    <div id="sidebar-footer">
+      <p>© <a href="https://www.openstreetmap.org/copyright" target="_blank">OpenStreetMap contributors</a> · Esri · <a href="https://github.com/rawazrauf/storage-mapper" target="_blank">GitHub</a></p>
+    </div>
+  </div>
+
+  <!-- MAP -->
+  <div id="map-wrap">
+    <div id="map"></div>
+  </div>
+</div>
+</div>
+
+<!-- SUBMIT MODAL -->
+<div id="modal-overlay">
+  <div id="modal-box">
+    <h2>Submit Changeset to OSM</h2>
+    <p>Submitting <strong id="modal-count" style="color:#f59e0b">0</strong> changes as a single changeset tagged <strong style="color:#f59e0b">#StorageMapper</strong>.</p>
+    <div class="modal-cs">
+      <span class="k">comment:</span> Storage tank content tagging via #StorageMapper — Iraq<br>
+      <span class="k">hashtags:</span> #StorageMapper<br>
+      <span class="k">created_by:</span> StorageMapper
+    </div>
+    <div id="modal-error"></div>
+    <div id="modal-progress"></div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-amber" id="btn-confirm" onclick="submitChangeset()">Submit changes</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ── CONFIG ────────────────────────────────────────────────────────────────────
+const CLIENT_ID     = 'WM1LjRiFDmlX6mWBelInwtsokEBriPcotXrN0VNMhTk';
+const REDIRECT_URI  = 'https://rawazrauf.github.io/storage-mapper/callback.html';
+const OSM_AUTH_URL  = 'https://www.openstreetmap.org/oauth2/authorize';
+const OSM_TOKEN_URL = 'https://www.openstreetmap.org/oauth2/token';
+const OSM_API       = 'https://api.openstreetmap.org/api/0.6';
+const IRAQ_BBOX     = '29.0,38.8,37.5,48.8';
+const OVERPASS_ENDPOINTS = [
+  'https://overpass-api.de/api/interpreter',
+  'https://overpass.kumi.systems/api/interpreter',
+  'https://overpass.private.coffee/api/interpreter'
+];
+const CONTENT_OPTS = [
+  { val:'oil',     label:'Oil',     color:'#e8922a' },
+  { val:'fuel',    label:'Fuel',    color:'#c47a2a' },
+  { val:'gas',     label:'Gas',     color:'#3db88a' },
+  { val:'LNG',     label:'LNG',     color:'#4a9edd' },
+  { val:'LPG',     label:'LPG',     color:'#a060e0' },
+  { val:'water',   label:'Water',   color:'#5bb8e8' },
+  { val:'unknown', label:'Unknown', color:'#6b7280' },
+];
+const CONTENT_COLOR = {};
+CONTENT_OPTS.forEach(o => { if (o.val !== 'unknown') CONTENT_COLOR[o.val] = o.color; });
+const BASE_MAP_CYCLE = ['satellite','clarity','streets'];
+
+// ── STATE ─────────────────────────────────────────────────────────────────────
+let map, baseLayers = {};
+let tankFeatures = [], tanksLayer = null;
+let stagedChanges = [];
+let selectedContent = null;
+let drawerOpen = false;
+let peekActive = false;
+let osmToken = null;
+let currentBaseMapIdx = 0;
+
+// ── PKCE HELPERS ──────────────────────────────────────────────────────────────
+function generateRandom(len) {
+  const arr = new Uint8Array(len);
+  crypto.getRandomValues(arr);
+  return btoa(String.fromCharCode(...arr)).replace(/\+/g,'-').replace(/\//g,'_').replace(/=/g,'');
+}
+async function sha256(plain) {
+  const enc = new TextEncoder().encode(plain);
+  const hash = await crypto.subtle.digest('SHA-256', enc);
+  return btoa(String.fromCharCode(...new Uint8Array(hash))).replace(/\+/g,'-').replace(/\//g,'_').replace(/=/g,'');
+}
+
+// ── OSM OAUTH 2.0 + PKCE ──────────────────────────────────────────────────────
+async function connectOSM() {
+  if (osmToken) return; // already connected
+  const verifier  = generateRandom(64);
+  const challenge = await sha256(verifier);
+  const state     = generateRandom(16);
+
+  sessionStorage.setItem('pkce_verifier', verifier);
+  sessionStorage.setItem('pkce_state',    state);
+
+  const params = new URLSearchParams({
+    response_type:         'code',
+    client_id:             CLIENT_ID,
+    redirect_uri:          REDIRECT_URI,
+    scope:                 'write_api',
+    state,
+    code_challenge:        challenge,
+    code_challenge_method: 'S256'
+  });
+
+  const authUrl = `${OSM_AUTH_URL}?${params}`;
+  const popup = window.open(authUrl, 'osm_auth', 'width=600,height=700,left=200,top=100');
+  if (!popup) { alert('Please allow popups for this site to connect to OSM.'); return; }
+
+  // Listen for callback message from callback.html
+  window.addEventListener('message', async function handler(e) {
+    if (e.data?.type !== 'osm_oauth_code') return;
+    window.removeEventListener('message', handler);
+
+    if (e.data.state !== sessionStorage.getItem('pkce_state')) {
+      showAuthError('OAuth state mismatch — please try again.'); return;
+    }
+
+    const token = await exchangeCode(e.data.code, sessionStorage.getItem('pkce_verifier'));
+    if (token) {
+      osmToken = token;
+      sessionStorage.removeItem('pkce_verifier');
+      sessionStorage.removeItem('pkce_state');
+      setAuthConnected();
+    }
+  });
+}
+
+async function exchangeCode(code, verifier) {
+  try {
+    const res = await fetch(OSM_TOKEN_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        grant_type:    'authorization_code',
+        client_id:     CLIENT_ID,
+        redirect_uri:  REDIRECT_URI,
+        code,
+        code_verifier: verifier
+      })
+    });
+    if (!res.ok) { showAuthError(`Token exchange failed: ${res.status}`); return null; }
+    const data = await res.json();
+    return data.access_token || null;
+  } catch(e) {
+    showAuthError('Token exchange error: ' + e.message);
+    return null;
+  }
+}
+
+function setAuthConnected() {
+  const badge = document.getElementById('auth-badge');
+  badge.classList.add('connected');
+  badge.onclick = null;
+  badge.style.cursor = 'default';
+  document.getElementById('auth-label').textContent = 'Connected to OSM';
+}
+
+function showAuthError(msg) {
+  alert('OSM Auth error: ' + msg);
+}
+
+// ── MAP INIT ──────────────────────────────────────────────────────────────────
+window.onload = function() {
+  initMap();
+  buildLegend();
+  loadTanks();
+};
+
+function initMap() {
+  map = L.map('map', { center:[33.0,44.4], zoom:6, zoomControl:true, maxZoom:19, minZoom:4 });
+  map.zoomControl.setPosition('bottomright');
+
+  baseLayers.satellite = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+    { attribution:'© Esri', maxNativeZoom:18, maxZoom:19 });
+  baseLayers.clarity = L.tileLayer('https://clarity.maptiles.arcgis.com/arcgis/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+    { attribution:'© Esri Clarity', maxNativeZoom:16, maxZoom:19 });
+  baseLayers.dark = L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
+    { attribution:'© CARTO', maxNativeZoom:19, maxZoom:19 });
+  baseLayers.streets = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+    { attribution:'© OpenStreetMap contributors', maxNativeZoom:19, maxZoom:19 });
+  baseLayers.satellite.addTo(map);
+
+  fetch('https://raw.githubusercontent.com/johan/world.geo.json/master/countries/IRQ.geo.json')
+    .then(r=>r.json()).then(d=>L.geoJSON(d,{style:{color:'#f59e0b',weight:2,opacity:.4,fillOpacity:0,dashArray:'4,6'},interactive:false}).addTo(map))
+    .catch(()=>{});
+
+  // Peek control
+  const PeekControl = L.Control.extend({
+    options: { position: 'bottomleft' },
+    onAdd() {
+      const btn = L.DomUtil.create('button','');
+      btn.id = 'peek-btn';
+      btn.style.cssText = 'display:flex;align-items:center;gap:6px;background:#111827ee;border:1px solid #374151;color:#d1d5db;font-size:11px;font-weight:700;font-family:Plus Jakarta Sans,sans-serif;padding:7px 12px;border-radius:10px;cursor:pointer;box-shadow:0 4px 12px rgba(0,0,0,.5);white-space:nowrap;user-select:none';
+      btn.innerHTML = '<svg width="14" height="14" fill="none" stroke="#f59e0b" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg><span id="peek-label">Peek [Space]</span>';
+      L.DomEvent.disableClickPropagation(btn);
+      L.DomEvent.disableScrollPropagation(btn);
+      L.DomEvent.on(btn, 'click', togglePeek);
+      return btn;
+    }
+  });
+  new PeekControl().addTo(map);
+
+  document.addEventListener('keydown', e => {
+    if (['INPUT','TEXTAREA'].includes(document.activeElement.tagName)) return;
+    if (e.code==='Space') { e.preventDefault(); togglePeek(); }
+    if (e.code==='KeyB')  { e.preventDefault(); cycleBaseMap(); }
+    if (e.code==='KeyN')  { e.preventDefault(); nextUnreviewedTank(); }
+  });
+}
+
+function changeBaseMap(type) {
+  Object.values(baseLayers).forEach(l=>{ if(map.hasLayer(l)) map.removeLayer(l); });
+  baseLayers[type].addTo(map);
+  currentBaseMapIdx = BASE_MAP_CYCLE.indexOf(type);
+  ['satellite','clarity','dark','streets'].forEach(k=>{
+    const btn=document.getElementById('bm-'+k);
+    if(btn) btn.className='basemap-btn'+(k===type?' active':'');
+  });
+}
+function cycleBaseMap() {
+  currentBaseMapIdx=(currentBaseMapIdx+1)%BASE_MAP_CYCLE.length;
+  changeBaseMap(BASE_MAP_CYCLE[currentBaseMapIdx]);
+}
+
+// ── PEEK ──────────────────────────────────────────────────────────────────────
+function togglePeek() { setPeek(!peekActive); }
+function setPeek(on) {
+  peekActive=on;
+  if(tanksLayer) tanksLayer.eachLayer(l=>l.setStyle({fillOpacity:on?0:.5,opacity:on?0:1}));
+  const btn=document.getElementById('peek-btn'), lbl=document.getElementById('peek-label');
+  if(!btn) return;
+  btn.style.background  = on?'rgba(245,158,11,.2)':'#111827ee';
+  btn.style.borderColor = on?'#f59e0b':'#374151';
+  btn.style.color       = on?'#fcd34d':'#d1d5db';
+  if(lbl) lbl.textContent = on?'Peek ON [Space]':'Peek [Space]';
+}
+
+// ── OVERPASS ──────────────────────────────────────────────────────────────────
+async function loadTanks() {
+  const loaderBox=document.getElementById('loader-box');
+  const loaderTxt=document.getElementById('loader-text');
+  const loaderBar=document.getElementById('loader-bar');
+  const timerEl  =document.getElementById('loader-timer');
+  loaderBox.style.display='block';
+  loaderTxt.textContent='Racing Overpass endpoints…';
+  loaderBar.style.width='15%';
+  let seconds=0;
+  const timer=setInterval(()=>{seconds+=.1;timerEl.textContent=seconds.toFixed(1)+'s';},100);
+  const query=`[out:json][timeout:90];way["man_made"="storage_tank"](${IRAQ_BBOX});out geom tags;`;
+  const fetchEP=async url=>{
+    const res=await fetch(url,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'data='+encodeURIComponent(query)});
+    if(!res.ok) throw new Error(res.status);
+    const json=await res.json();
+    if(!json.elements) throw new Error('no elements');
+    return {json,url};
+  };
+  let data=null;
+  try {
+    loaderBar.style.width='40%';
+    const winner=await Promise.any(OVERPASS_ENDPOINTS.map(fetchEP));
+    data=winner.json;
+    loaderTxt.textContent='Got data from '+winner.url.replace('https://','').split('/')[0];
+    loaderBar.style.width='80%';
+  } catch(e) {
+    clearInterval(timer); loaderTxt.textContent='⚠ All endpoints failed'; return;
+  }
+  clearInterval(timer);
+
+  function circularity(geom) {
+    const n=geom.length; let area=0,perim=0;
+    const latAvg=geom.reduce((s,p)=>s+p.lat,0)/n;
+    const cosLat=Math.cos(latAvg*Math.PI/180);
+    for(let i=0;i<n-1;i++){
+      const[x0,y0]=[geom[i].lon,geom[i].lat],[x1,y1]=[geom[i+1].lon,geom[i+1].lat];
+      area+=x0*y1-x1*y0;
+      const dx=(x1-x0)*cosLat*111320,dy=(y1-y0)*111320;
+      perim+=Math.sqrt(dx*dx+dy*dy);
+    }
+    area=Math.abs(area)/2*(111320**2)*cosLat;
+    return perim>0?(4*Math.PI*area)/(perim**2):0;
+  }
+  tankFeatures=data.elements.filter(el=>el.geometry&&el.geometry.length>=3&&circularity(el.geometry)>=0.75);
+  loaderBar.style.width='100%';
+  loaderTxt.textContent=`Loaded ${tankFeatures.length} tank polygons`;
+  setTimeout(()=>{loaderBox.style.display='none';},1500);
+  renderTanks(); updateStats();
+}
+
+// ── RENDER ────────────────────────────────────────────────────────────────────
+function renderTanks() {
+  if(tanksLayer) map.removeLayer(tanksLayer);
+  const polys=[];
+  tankFeatures.forEach(el=>{
+    const latlngs=el.geometry.map(n=>[n.lat,n.lon]);
+    const lats=el.geometry.map(n=>n.lat),lngs=el.geometry.map(n=>n.lon);
+    el._lat=lats.reduce((a,b)=>a+b,0)/lats.length;
+    el._lng=lngs.reduce((a,b)=>a+b,0)/lngs.length;
+    const staged=getStagedChange(el.type,el.id);
+    const content=staged?(staged.action==='delete'?null:staged.new_content):(el.tags||{}).content;
+    const color=content?(CONTENT_COLOR[content]||'#9ca3af'):'#4b5563';
+    const poly=L.polygon(latlngs,{fillColor:color,fillOpacity:.5,color:staged?'#fff':(content?color:'#6b7280'),weight:staged?2.5:1.5});
+    poly.on('click',()=>openTankPopup(el));
+    el._marker=poly; polys.push(poly);
+  });
+  tanksLayer=L.layerGroup(polys).addTo(map);
+}
+
+function refreshMarker(type,id) {
+  const el=tankFeatures.find(e=>e.type===type&&e.id===id);
+  if(!el||!el._marker) return;
+  const staged=getStagedChange(type,id);
+  const content=staged?(staged.action==='delete'?null:staged.new_content):(el.tags||{}).content;
+  const color=content?(CONTENT_COLOR[content]||'#9ca3af'):'#4b5563';
+  el._marker.setStyle({fillColor:color,fillOpacity:.5,color:staged?'#fff':(content?color:'#6b7280'),weight:staged?2.5:1.5});
+}
+
+// ── POPUP ─────────────────────────────────────────────────────────────────────
+function openTankPopup(el) {
+  selectedContent=null;
+  const tags=el.tags||{},content=tags.content,staged=getStagedChange(el.type,el.id);
+  const name=tags.name||tags['name:en']||null;
+  const wrap=document.createElement('div'); wrap.className='pu';
+
+  const tr=document.createElement('div'); tr.className='pu-title';
+  tr.innerHTML=`<span style="font-weight:800;color:#f59e0b;font-size:14px">⊕ Storage Tank</span>`;
+  const idBadge=document.createElement('span'); idBadge.className='pu-id';
+  idBadge.textContent=el.type[0].toUpperCase()+'·'+el.id; tr.appendChild(idBadge); wrap.appendChild(tr);
+
+  const addMeta=(k,v)=>{const r=document.createElement('div');r.className='pu-meta';r.innerHTML=`<span class="pu-key">${k}</span><span class="pu-val">${v}</span>`;wrap.appendChild(r);};
+  if(name) addMeta('name',name);
+  if(tags.operator) addMeta('operator',tags.operator);
+  if(tags.capacity) addMeta('capacity',tags.capacity+' m³');
+
+  if(staged){
+    const isDelete=staged.action==='delete';
+    const box=document.createElement('div'); box.className='pu-tag-box staged';
+    box.innerHTML=`<div class="pu-tag-label" style="color:#f59e0b">Staged ${isDelete?'deletion':'change'}</div>
+      <div style="font-weight:700;${isDelete?'color:#f87171;text-decoration:line-through':'color:#fcd34d'}">${isDelete?staged.old_content:staged.new_content}</div>
+      ${isDelete?'<div style="font-size:9px;color:rgba(248,113,113,.7);margin-top:2px">content tag will be removed</div>':
+        (staged.old_content&&staged.old_content!==staged.new_content?`<div style="font-size:9px;color:#6b7280;margin-top:2px">was: ${staged.old_content}</div>`:'')}`;
+    wrap.appendChild(box);
+  } else if(content) {
+    const box=document.createElement('div'); box.className='pu-tag-box current';
+    box.innerHTML=`<div class="pu-tag-label">Current OSM tag</div>`;
+    const pill=document.createElement('span'); pill.className='pill';
+    pill.style.cssText=`color:${CONTENT_COLOR[content]||'#9ca3af'};border-color:${CONTENT_COLOR[content]||'#9ca3af'}60;background:${CONTENT_COLOR[content]||'#9ca3af'}20`;
+    pill.textContent=content; box.appendChild(pill); wrap.appendChild(box);
+  } else {
+    const box=document.createElement('div'); box.className='pu-tag-box none';
+    box.innerHTML='No <code style="color:#f59e0b">content=*</code> tag yet'; wrap.appendChild(box);
+  }
+
+  const gl=document.createElement('div'); gl.className='pu-grid-label';
+  gl.textContent=(content||staged)?'Change content':'Set content'; wrap.appendChild(gl);
+
+  const grid=document.createElement('div'); grid.className='pu-grid'; grid.id='cg-'+el.id;
+  CONTENT_OPTS.forEach(o=>{
+    if(o.val==='unknown'){
+      const hasTag=!!(staged?staged.old_content:content); if(!hasTag) return;
+      const btn=document.createElement('button'); btn.className='pu-btn';
+      btn.style.cssText='color:#ef4444;border-color:#ef444440;background:#111827';
+      btn.textContent='? Unknown';
+      btn.addEventListener('click',()=>stageDelete(el.type,el.id,content||'',name||''));
+      grid.appendChild(btn); return;
+    }
+    const isCurrent=(staged?staged.new_content:content)===o.val;
+    const btn=document.createElement('button'); btn.className='pu-btn'+(isCurrent?' sel':'');
+    btn.style.cssText=isCurrent?`color:#111;background:${o.color};border-color:${o.color}`:`color:${o.color};border-color:${o.color}40;background:#111827`;
+    btn.textContent=o.label;
+    btn.addEventListener('click',()=>selectContent(el.id,o.val,o.color));
+    grid.appendChild(btn);
+  });
+  wrap.appendChild(grid);
+
+  const actions=document.createElement('div'); actions.className='pu-actions';
+  const makeBtn=(label,bg,color,border,fn)=>{
+    const b=document.createElement('button'); b.className='pu-action-btn';
+    b.style.cssText=`background:${bg};color:${color};border-color:${border}`;
+    b.textContent=label; b.addEventListener('click',fn); return b;
+  };
+  if(content&&!staged){
+    actions.appendChild(makeBtn('✓ Validate','rgba(34,197,94,.15)','#4ade80','rgba(34,197,94,.4)',()=>validateTag(el.type,el.id,content,name||'')));
+    actions.appendChild(makeBtn('Change tag','rgba(245,158,11,.15)','#fbbf24','rgba(245,158,11,.4)',()=>stageChange(el.type,el.id,content,name||'')));
+  } else if(staged){
+    actions.appendChild(makeBtn('Update staged','rgba(245,158,11,.15)','#fbbf24','rgba(245,158,11,.4)',()=>updateStaged(el.type,el.id)));
+    actions.appendChild(makeBtn('Remove','rgba(239,68,68,.1)','#f87171','rgba(239,68,68,.3)',()=>removeStaged(el.type,el.id)));
+  } else {
+    actions.appendChild(makeBtn('+ Stage change','rgba(245,158,11,.15)','#fbbf24','rgba(245,158,11,.4)',()=>stageChange(el.type,el.id,null,name||'')));
+  }
+  wrap.appendChild(actions);
+
+  L.popup({maxWidth:340,closeButton:true,autoPan:true}).setLatLng([el._lat,el._lng]).setContent(wrap).openOn(map);
+}
+
+function selectContent(elId,val,color){
+  selectedContent=val;
+  const grid=document.getElementById('cg-'+elId); if(!grid) return;
+  grid.querySelectorAll('.pu-btn').forEach(btn=>{
+    const o=CONTENT_OPTS.find(x=>btn.textContent.trim()===x.label); if(!o||o.val==='unknown') return;
+    if(o.val===val){btn.classList.add('sel');btn.style.background=o.color;btn.style.color='#111';btn.style.borderColor=o.color;}
+    else{btn.classList.remove('sel');btn.style.background='#111827';btn.style.color=o.color;btn.style.borderColor=o.color+'40';}
+  });
+}
+
+// ── STAGING ───────────────────────────────────────────────────────────────────
+function getStagedChange(type,id){return stagedChanges.find(c=>c.osm_type===type&&c.osm_id===id)||null;}
+function todayISO(){return new Date().toISOString().slice(0,10);}
+
+function validateTag(type,id,content,name){
+  if(stagedChanges.length>=100){alert('Staging area full.');return;}
+  pushStaged({osm_type:type,osm_id:id,name,old_content:content,new_content:content,action:'validated'});
+  map.closePopup();
+}
+function stageChange(type,id,oldContent,name){
+  if(!selectedContent){alert('Select a content type first.');return;}
+  if(selectedContent==='unknown'){stageDelete(type,id,oldContent||'',name);return;}
+  if(stagedChanges.length>=100){alert('Staging area full.');return;}
+  const action=!oldContent?'new':selectedContent===oldContent?'validated':'change';
+  pushStaged({osm_type:type,osm_id:id,name,old_content:oldContent,new_content:selectedContent,action});
+  map.closePopup();
+}
+function stageDelete(type,id,oldContent,name){
+  if(!oldContent){map.closePopup();return;}
+  if(stagedChanges.length>=100){alert('Staging area full.');return;}
+  pushStaged({osm_type:type,osm_id:id,name,old_content:oldContent,new_content:null,action:'delete'});
+  map.closePopup();
+}
+function updateStaged(type,id){
+  if(!selectedContent){alert('Select a content type first.');return;}
+  if(selectedContent==='unknown'){stageDelete(type,id,stagedChanges.find(c=>c.osm_type===type&&c.osm_id===id)?.old_content||'','');return;}
+  const c=stagedChanges.find(c=>c.osm_type===type&&c.osm_id===id);
+  if(c){c.new_content=selectedContent;c.action=!c.old_content?'new':selectedContent===c.old_content?'validated':'change';}
+  map.closePopup(); refreshDrawer(); refreshMarker(type,id);
+}
+function removeStaged(type,id){
+  stagedChanges=stagedChanges.filter(c=>!(c.osm_type===type&&c.osm_id===id));
+  map.closePopup(); refreshDrawer(); refreshMarker(type,id);
+}
+function pushStaged(change){
+  change.check_date=todayISO();
+  const idx=stagedChanges.findIndex(c=>c.osm_type===change.osm_type&&c.osm_id===change.osm_id);
+  if(idx>=0) stagedChanges[idx]=change; else stagedChanges.push(change);
+  refreshDrawer(); refreshMarker(change.osm_type,change.osm_id);
+}
+
+// ── DRAWER ────────────────────────────────────────────────────────────────────
+function refreshDrawer(){
+  const n=stagedChanges.length;
+  document.getElementById('drawer-badge').textContent=n;
+  document.getElementById('header-count').textContent=n;
+  document.getElementById('modal-count').textContent=n;
+  document.getElementById('gauge-fill').style.width=(n/100*100)+'%';
+  document.getElementById('gauge-label').textContent=`${n} / 100`;
+
+  const has=n>0;
+  const bStaged=document.getElementById('btn-staged');
+  const bSubmit=document.getElementById('btn-submit');
+  bStaged.disabled=!has; bStaged.style.opacity=has?'1':'.4';
+  bSubmit.disabled=!has; bSubmit.style.opacity=has?'1':'.4';
+  document.getElementById('header-count').className=has?'badge':'badge-dim';
+
+  const drawer=document.getElementById('staged-drawer');
+  if(has&&!drawerOpen){
+    drawer.style.display='block'; drawerOpen=true;
+    setTimeout(()=>{if(map)map.invalidateSize();},50);
+  } else if(!has&&drawerOpen){
+    drawer.style.display='none'; drawerOpen=false;
+    setTimeout(()=>{if(map)map.invalidateSize();},50);
+  }
+
+  const list=document.getElementById('chip-list'); list.innerHTML='';
+  stagedChanges.forEach(c=>{
+    const dotColor=c.action==='new'?'#3db88a':c.action==='change'?'#e8922a':c.action==='delete'?'#ef4444':'#4a9edd';
+    const chip=document.createElement('div'); chip.className='chip';
+    const dot=document.createElement('span'); dot.className='chip-dot'; dot.style.background=dotColor;
+    const idspan=document.createElement('span'); idspan.style.color='#6b7280'; idspan.textContent=c.osm_type[0]+'·'+c.osm_id;
+    const val=document.createElement('span');
+    if(c.action==='delete'){val.style.cssText='color:#f87171;text-decoration:line-through';val.textContent=c.old_content;}
+    else val.textContent=c.new_content;
+    const del=document.createElement('span'); del.className='chip-del'; del.textContent='×';
+    del.addEventListener('click',e=>{e.stopPropagation();removeStaged(c.osm_type,c.osm_id);});
+    chip.appendChild(dot); chip.appendChild(idspan); chip.appendChild(val);
+    if(c.action==='delete'){const arr=document.createElement('span');arr.style.color='rgba(248,113,113,.6)';arr.textContent='→ ∅';chip.appendChild(arr);}
+    else if(c.old_content&&c.old_content!==c.new_content){const old=document.createElement('span');old.style.color='#4b5563';old.textContent='← '+c.old_content;chip.appendChild(old);}
+    chip.appendChild(del);
+    chip.addEventListener('click',e=>{if(e.target===del)return;const el=tankFeatures.find(f=>f.type===c.osm_type&&f.id===c.osm_id);if(el)map.setView([el._lat,el._lng],Math.max(map.getZoom(),15));});
+    list.appendChild(chip);
+  });
+  updateStats();
+}
+
+function toggleStagedDrawer(){
+  const drawer=document.getElementById('staged-drawer');
+  drawerOpen=!drawerOpen;
+  drawer.style.display=drawerOpen?'block':'none';
+  setTimeout(()=>{if(map)map.invalidateSize();},50);
+}
+
+function clearAllStaged(){
+  if(!confirm(`Clear all ${stagedChanges.length} staged changes?`))return;
+  const copy=[...stagedChanges]; stagedChanges=[];
+  copy.forEach(c=>refreshMarker(c.osm_type,c.osm_id));
+  refreshDrawer();
+}
+
+// ── STATS & LEGEND ────────────────────────────────────────────────────────────
+function updateStats(){
+  const total=tankFeatures.length;
+  const tagged=tankFeatures.filter(el=>(el.tags||{}).content).length;
+  document.getElementById('stat-total').textContent=total;
+  document.getElementById('stat-tagged').textContent=tagged;
+  document.getElementById('stat-untagged').textContent=total-tagged;
+}
+function buildLegend(){
+  const list=document.getElementById('legend-list');
+  CONTENT_OPTS.forEach(o=>{
+    if(o.val==='unknown') return;
+    const row=document.createElement('div'); row.className='legend-row';
+    const label=document.createElement('span'); label.textContent=o.label;
+    const dot=document.createElement('span'); dot.className='legend-dot'; dot.style.background=o.color;
+    row.appendChild(label); row.appendChild(dot); list.insertBefore(row,list.firstChild);
+  });
+}
+
+// ── NEXT UNREVIEWED ───────────────────────────────────────────────────────────
+function nextUnreviewedTank(){
+  if(!tankFeatures.length) return;
+  let pool=tankFeatures.filter(el=>!getStagedChange(el.type,el.id)&&!(el.tags||{}).check_date);
+  if(!pool.length) pool=tankFeatures.filter(el=>!getStagedChange(el.type,el.id));
+  if(!pool.length) return;
+  const el=pool[Math.floor(Math.random()*pool.length)];
+  map.setView([el._lat,el._lng],Math.max(map.getZoom(),17));
+  setTimeout(()=>openTankPopup(el),300);
+}
+
+// ── SIDEBAR TOGGLE ────────────────────────────────────────────────────────────
+function toggleSidebar(){
+  const s=document.getElementById('sidebar'),b=document.getElementById('drawer-backdrop');
+  const open=s.classList.toggle('open'); b.classList.toggle('open',open);
+  setTimeout(()=>{if(map)map.invalidateSize();},310);
+}
+
+// ── MODAL ─────────────────────────────────────────────────────────────────────
+function openModal(){
+  if(!osmToken){ alert('Please connect to OSM first using the "Connect to OSM" button.'); return; }
+  document.getElementById('modal-error').style.display='none';
+  document.getElementById('modal-progress').style.display='none';
+  document.getElementById('modal-overlay').style.display='flex';
+}
+function closeModal(){ document.getElementById('modal-overlay').style.display='none'; }
+
+// ── SUBMIT ────────────────────────────────────────────────────────────────────
+async function submitChangeset(){
+  if(!osmToken){ showErr('Not connected to OSM.'); return; }
+  if(!stagedChanges.length){ showErr('No changes staged.'); return; }
+  const prog=document.getElementById('modal-progress');
+  const btn=document.getElementById('btn-confirm');
+  document.getElementById('modal-error').style.display='none';
+  prog.style.display='block'; btn.disabled=true; btn.textContent='Submitting…';
+  const headers={'Authorization':'Bearer '+osmToken,'Content-Type':'text/xml'};
+  try {
+    prog.textContent='① Opening changeset…';
+    const csRes=await fetch(`${OSM_API}/changeset/create`,{method:'PUT',headers,body:`<osm><changeset>
+      <tag k="created_by" v="StorageMapper"/>
+      <tag k="comment" v="Storage tank content tagging via #StorageMapper — Iraq"/>
+      <tag k="hashtags" v="#StorageMapper"/>
+      <tag k="source" v="local_knowledge;osm_data"/>
+    </changeset></osm>`});
+    if(!csRes.ok) throw new Error(`Changeset create failed: ${csRes.status} — ${await csRes.text()}`);
+    const csId=(await csRes.text()).trim();
+    prog.textContent=`② Changeset #${csId} opened. Uploading…`;
+
+    let uploadXml=`<osmChange version="0.6"><modify>`;
+    const failed=[];
+    for(const c of stagedChanges){
+      prog.textContent=`② Fetching ${c.osm_type}/${c.osm_id}…`;
+      try{
+        const elRes=await fetch(`${OSM_API}/${c.osm_type}/${c.osm_id}`,{headers});
+        if(!elRes.ok){failed.push(c.osm_id);continue;}
+        const doc=new DOMParser().parseFromString(await elRes.text(),'text/xml');
+        const elNode=doc.querySelector(c.osm_type); if(!elNode){failed.push(c.osm_id);continue;}
+        const existingContent=elNode.querySelector('tag[k="content"]');
+        if(c.action==='delete'){if(existingContent)existingContent.parentNode.removeChild(existingContent);}
+        else if(existingContent) existingContent.setAttribute('v',c.new_content);
+        else{const t=doc.createElement('tag');t.setAttribute('k','content');t.setAttribute('v',c.new_content);elNode.appendChild(t);}
+        const existingCD=elNode.querySelector('tag[k="check_date"]');
+        if(existingCD) existingCD.setAttribute('v',c.check_date);
+        else{const cd=doc.createElement('tag');cd.setAttribute('k','check_date');cd.setAttribute('v',c.check_date);elNode.appendChild(cd);}
+        elNode.setAttribute('changeset',csId);
+        uploadXml+=new XMLSerializer().serializeToString(elNode);
+      }catch(fe){failed.push(c.osm_id);}
+    }
+    uploadXml+=`</modify></osmChange>`;
+
+    prog.textContent='③ Uploading diff…';
+    const diffRes=await fetch(`${OSM_API}/changeset/${csId}/upload`,{method:'POST',headers,body:uploadXml});
+    if(!diffRes.ok) throw new Error(`Upload failed: ${diffRes.status} — ${(await diffRes.text()).slice(0,300)}`);
+
+    prog.textContent='④ Closing changeset…';
+    await fetch(`${OSM_API}/changeset/${csId}/close`,{method:'PUT',headers});
+
+    prog.innerHTML=`✓ <a href="https://www.openstreetmap.org/changeset/${csId}" target="_blank" style="color:#f59e0b">Changeset #${csId}</a> submitted successfully!${failed.length?` (${failed.length} items skipped)`:''}`;
+    const copy=[...stagedChanges]; stagedChanges=[];
+    copy.forEach(c=>refreshMarker(c.osm_type,c.osm_id));
+    refreshDrawer(); btn.textContent='Done ✓';
+  }catch(e){
+    showErr(e.message);
+    btn.disabled=false; btn.textContent='Submit changes';
+    prog.style.display='none';
+  }
+}
+function showErr(msg){const el=document.getElementById('modal-error');el.textContent='⚠ '+msg;el.style.display='block';}
+</script>
+</body>
+</html>
