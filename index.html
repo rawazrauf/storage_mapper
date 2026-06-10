@@ -305,7 +305,7 @@ const OVERPASS_ENDPOINTS = [
 ];
 const CONTENT_OPTS = [
   { val:'oil',     label:'Oil',     color:'#e8922a' },
-  { val:'fuel',    label:'Fuel',    color:'#c47a2a' },
+  { val:'fuel',    label:'Fuel',    color:'#e05555' },
   { val:'gas',     label:'Gas',     color:'#3db88a' },
   { val:'LNG',     label:'LNG',     color:'#4a9edd' },
   { val:'LPG',     label:'LPG',     color:'#a060e0' },
@@ -720,6 +720,8 @@ function openTankPopup(el) {
   } else {
     actions.appendChild(makeBtn('+ Stage change','rgba(245,158,11,.15)','#fbbf24','rgba(245,158,11,.4)',()=>stageChange(el.type,el.id,null,name||'')));
   }
+  // Always show "Not a tank" button
+  actions.appendChild(makeBtn('⚑ Not a tank','rgba(249,115,22,.1)','#f97316','rgba(249,115,22,.3)',()=>stageFixme(el.type,el.id,name||'')));
   wrap.appendChild(actions);
 
   L.popup({maxWidth:340,closeButton:true,autoPan:true}).setLatLng([el._lat,el._lng]).setContent(wrap).openOn(map);
@@ -738,6 +740,12 @@ function selectContent(elId,val,color){
 // ── STAGING ───────────────────────────────────────────────────────────────────
 function getStagedChange(type,id){return stagedChanges.find(c=>c.osm_type===type&&c.osm_id===id)||null;}
 function todayISO(){return new Date().toISOString().slice(0,10);}
+
+function stageFixme(type, id, name) {
+  if (stagedChanges.length >= 100) { alert('Staging area full.'); return; }
+  pushStaged({ osm_type:type, osm_id:id, name, old_content:null, new_content:null, action:'fixme' });
+  map.closePopup();
+}
 
 function validateTag(type,id,content,name){
   if(stagedChanges.length>=100){alert('Staging area full.');return;}
@@ -803,12 +811,13 @@ function refreshDrawer(){
 
   const list=document.getElementById('chip-list'); list.innerHTML='';
   stagedChanges.forEach(c=>{
-    const dotColor=c.action==='new'?'#3db88a':c.action==='change'?'#e8922a':c.action==='delete'?'#ef4444':'#4a9edd';
+    const dotColor=c.action==='new'?'#3db88a':c.action==='change'?'#e8922a':c.action==='delete'?'#ef4444':c.action==='fixme'?'#f97316':'#4a9edd';
     const chip=document.createElement('div'); chip.className='chip';
     const dot=document.createElement('span'); dot.className='chip-dot'; dot.style.background=dotColor;
     const idspan=document.createElement('span'); idspan.style.color='#6b7280'; idspan.textContent=c.osm_type[0]+'·'+c.osm_id;
     const val=document.createElement('span');
     if(c.action==='delete'){val.style.cssText='color:#f87171;text-decoration:line-through';val.textContent=c.old_content;}
+    else if(c.action==='fixme'){val.style.color='#f97316';val.textContent='fixme: not a tank';}
     else val.textContent=c.new_content;
     const del=document.createElement('span'); del.className='chip-del'; del.textContent='×';
     del.addEventListener('click',e=>{e.stopPropagation();removeStaged(c.osm_type,c.osm_id);});
@@ -913,7 +922,12 @@ async function submitChangeset(){
         const doc=new DOMParser().parseFromString(await elRes.text(),'text/xml');
         const elNode=doc.querySelector(c.osm_type); if(!elNode){failed.push(c.osm_id);continue;}
         const existingContent=elNode.querySelector('tag[k="content"]');
-        if(c.action==='delete'){if(existingContent)existingContent.parentNode.removeChild(existingContent);}
+        if(c.action==='fixme'){
+          // Add fixme tag, leave content alone
+          const existingFixme=elNode.querySelector('tag[k="fixme"]');
+          if(existingFixme){existingFixme.setAttribute('v','not a storage tank');}
+          else{const t=doc.createElement('tag');t.setAttribute('k','fixme');t.setAttribute('v','not a storage tank');elNode.appendChild(t);}
+        } else if(c.action==='delete'){if(existingContent)existingContent.parentNode.removeChild(existingContent);}
         else if(existingContent) existingContent.setAttribute('v',c.new_content);
         else{const t=doc.createElement('tag');t.setAttribute('k','content');t.setAttribute('v',c.new_content);elNode.appendChild(t);}
         const existingCD=elNode.querySelector('tag[k="check_date"]');
