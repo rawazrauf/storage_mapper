@@ -663,6 +663,15 @@ function openTankPopup(el) {
   if(name) addMeta('name',name);
   if(tags.operator) addMeta('operator',tags.operator);
   if(tags.capacity) addMeta('capacity',tags.capacity+' m³');
+  if(tags.check_date) {
+    const today = todayISO();
+    const days = Math.floor((new Date(today) - new Date(tags.check_date)) / 86400000);
+    const color = days === 0 ? '#f59e0b' : days <= 30 ? '#4ade80' : '#6b7280';
+    const label = days === 0 ? 'checked today' : days === 1 ? 'checked yesterday' : `checked ${days}d ago`;
+    const r = document.createElement('div'); r.className='pu-meta';
+    r.innerHTML=`<span class="pu-key">last checked</span><span style="font-size:11px;font-weight:600;color:${color}">${tags.check_date} <span style="font-size:9px;opacity:.8">(${label})</span></span>`;
+    wrap.appendChild(r);
+  }
 
   if(staged){
     const isDelete=staged.action==='delete';
