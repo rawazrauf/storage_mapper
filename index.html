@@ -347,6 +347,7 @@ async function connectOSM() {
 
   sessionStorage.setItem('pkce_verifier', verifier);
   sessionStorage.setItem('pkce_state',    state);
+  localStorage.removeItem('osm_oauth_result'); // clear any stale result
 
   const params = new URLSearchParams({
     response_type:         'code',
@@ -362,23 +363,36 @@ async function connectOSM() {
   const popup = window.open(authUrl, 'osm_auth', 'width=600,height=700,left=200,top=100');
   if (!popup) { alert('Please allow popups for this site to connect to OSM.'); return; }
 
-  // Listen for callback message from callback.html
-  window.addEventListener('message', async function handler(e) {
-    if (e.data?.type !== 'osm_oauth_code') return;
-    window.removeEventListener('message', handler);
+  // Poll localStorage for the result written by callback.html
+  const pollInterval = setInterval(async () => {
+    const raw = localStorage.getItem('osm_oauth_result');
+    if (!raw) return;
+    clearInterval(pollInterval);
+    localStorage.removeItem('osm_oauth_result');
 
-    if (e.data.state !== sessionStorage.getItem('pkce_state')) {
-      showAuthError('OAuth state mismatch — please try again.'); return;
-    }
+    let result;
+    try { result = JSON.parse(raw); } catch(e) { showAuthError('Invalid callback data.'); return; }
 
-    const token = await exchangeCode(e.data.code, sessionStorage.getItem('pkce_verifier'));
+    if (result.error) { showAuthError('OSM auth error: ' + result.error); return; }
+    if (result.state !== sessionStorage.getItem('pkce_state')) { showAuthError('OAuth state mismatch — please try again.'); return; }
+
+    const token = await exchangeCode(result.code, sessionStorage.getItem('pkce_verifier'));
     if (token) {
       osmToken = token;
       sessionStorage.removeItem('pkce_verifier');
       sessionStorage.removeItem('pkce_state');
       setAuthConnected();
     }
-  });
+  }, 500);
+
+  // Stop polling if popup is closed without completing auth
+  const popupCheck = setInterval(() => {
+    if (popup.closed) {
+      clearInterval(pollInterval);
+      clearInterval(popupCheck);
+      localStorage.removeItem('osm_oauth_result');
+    }
+  }, 1000);
 }
 
 async function exchangeCode(code, verifier) {
