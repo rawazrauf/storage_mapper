@@ -755,15 +755,15 @@ function renderIconsAndLabels() {
   iconLayer  = L.layerGroup(icons);
   labelLayer = L.layerGroup(labels);
   const z = map.getZoom();
-  if (z >= 14) iconLayer.addTo(map);
+  if (z >= 13) iconLayer.addTo(map);
   if (z >= 16) labelLayer.addTo(map);
   map.off('zoomend.iconlabels');
   map.on('zoomend.iconlabels', () => {
-    const z = map.getZoom();
-    if (z >= 14) { if (!map.hasLayer(iconLayer))  iconLayer.addTo(map);  }
-    else {          if (map.hasLayer(iconLayer))   map.removeLayer(iconLayer); }
+    const z = map.getZoom(); // fresh value each time
+    if (z >= 13) { if (!map.hasLayer(iconLayer))  iconLayer.addTo(map);  }
+    else          { if (map.hasLayer(iconLayer))   map.removeLayer(iconLayer); }
     if (z >= 16) { if (!map.hasLayer(labelLayer)) labelLayer.addTo(map); }
-    else {          if (map.hasLayer(labelLayer))  map.removeLayer(labelLayer); }
+    else          { if (map.hasLayer(labelLayer))  map.removeLayer(labelLayer); }
   });
 }
 
