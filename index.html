@@ -170,26 +170,50 @@ kbd { background: #1f2937; color: #d1d5db; font-family: monospace; font-size: 10
 .mob-map-btn:active { opacity: .7; }
 .mob-map-btn.peek-on { background: rgba(245,158,11,.2); border-color: #f59e0b; color: #fcd34d; }
 
+/* Mobile map buttons — fixed at bottom center, hidden on desktop */
+#mobile-map-btns {
+  display: none;
+  position: fixed;
+  bottom: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 1500;
+  gap: 10px;
+}
+
 @media (max-width: 1023px) {
   #mobile-menu-btn { display: block; }
-  #sidebar { position: fixed; top: 0; left: 0; bottom: 0; z-index: 400; transform: translateX(-100%); }
+  /* Sidebar slides in from left, starts below header */
+  #sidebar {
+    position: fixed;
+    top: 56px; /* below header */
+    left: 0; bottom: 0;
+    z-index: 1200;
+    transform: translateX(-100%);
+    width: 85vw;
+    max-width: 320px;
+  }
   #sidebar.open { transform: translateX(0); }
+  #drawer-backdrop { z-index: 1100; }
   #drawer-backdrop.open { display: block; }
   /* Hide desktop Leaflet peek control on mobile */
   #peek-btn { display: none !important; }
   /* Show mobile map buttons */
-  #mobile-map-btns { display: flex !important; }
-  /* Make header more compact on mobile */
+  #mobile-map-btns { display: flex; }
+  /* Compact header */
   #header h1 { font-size: 13px; }
   #auth-label { display: none; }
   #auth-badge { padding: 5px 8px; }
-  /* Make staged drawer chips wrap better */
+  /* Chips wrap */
   #chip-list { flex-wrap: wrap; }
-  /* Larger popup action buttons for touch */
-  .pu-action-btn { padding: 10px 4px; font-size: 12px; }
-  .pu-btn { padding: 8px 4px; font-size: 11px; }
-  /* Make modal full-width on mobile */
+  /* Larger touch targets in popup */
+  .pu-action-btn { padding: 12px 4px; font-size: 13px; }
+  .pu-btn { padding: 10px 4px; font-size: 11px; }
+  /* Full width modal */
   #modal-box { margin: 8px; padding: 16px; }
+  /* Map fills remaining space */
+  #map-wrap { flex: 1; min-height: 0; }
+  #map { width: 100%; height: 100%; }
 }
 ::-webkit-scrollbar{width:4px;} ::-webkit-scrollbar-track{background:#111827;} ::-webkit-scrollbar-thumb{background:#374151;border-radius:2px;}
 </style>
@@ -295,21 +319,22 @@ kbd { background: #1f2937; color: #d1d5db; font-family: monospace; font-size: 10
   </div>
 
   <!-- MAP -->
-  <div id="map-wrap" style="position:relative">
+  <div id="map-wrap">
     <div id="map"></div>
-    <!-- Mobile touch buttons — shown only on small screens -->
-    <div id="mobile-map-btns">
-      <button class="mob-map-btn" id="mob-peek-btn" ontouchend="handleMobPeek(event)">
-        <svg width="16" height="16" fill="none" stroke="#f59e0b" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>
-        <span id="mob-peek-label">Peek</span>
-      </button>
-      <button class="mob-map-btn" ontouchend="handleMobNext(event)">
-        <svg width="16" height="16" fill="none" stroke="#4ade80" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M13 7l5 5m0 0l-5 5m5-5H6"/></svg>
-        Next tank
-      </button>
-    </div>
   </div>
 </div>
+</div>
+
+<!-- MOBILE MAP BUTTONS — fixed overlay, shown only on mobile -->
+<div id="mobile-map-btns">
+  <button class="mob-map-btn" id="mob-peek-btn" onclick="handleMobPeek(event)">
+    <svg width="16" height="16" fill="none" stroke="#f59e0b" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>
+    <span id="mob-peek-label">Peek</span>
+  </button>
+  <button class="mob-map-btn" onclick="handleMobNext(event)">
+    <svg width="16" height="16" fill="none" stroke="#4ade80" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M13 7l5 5m0 0l-5 5m5-5H6"/></svg>
+    Next tank
+  </button>
 </div>
 
 <!-- SUBMIT MODAL -->
@@ -943,21 +968,16 @@ function nextUnreviewedTank(){
   if(!pool.length) pool=tankFeatures.filter(el=>!getStagedChange(el.type,el.id));
   if(!pool.length) return;
   const el=pool[Math.floor(Math.random()*pool.length)];
+  const isMobile=window.innerWidth<=1023;
   map.setView([el._lat,el._lng],Math.max(map.getZoom(),17));
-  setTimeout(()=>openTankPopup(el),300);
+  setTimeout(()=>openTankPopup(el), isMobile?600:300);
 }
 
 // ── MOBILE MAP BUTTON HANDLERS ───────────────────────────────────────────────
 function handleMobPeek(e) {
-  e.preventDefault();
   togglePeek();
-  const btn = document.getElementById('mob-peek-btn');
-  const lbl = document.getElementById('mob-peek-label');
-  if (btn) btn.classList.toggle('peek-on', peekActive);
-  if (lbl) lbl.textContent = peekActive ? 'Peek ON' : 'Peek';
 }
 function handleMobNext(e) {
-  e.preventDefault();
   nextUnreviewedTank();
 }
 
