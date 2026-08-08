@@ -486,6 +486,96 @@ async function sha256(plain) {
 }
 
 // ── OSM OAUTH 2.0 + PKCE ──────────────────────────────────────────────────────
+// ── STAGED-CHANGE PERSISTENCE (survives the same-tab OAuth round-trip) ─────────
+function persistStaged(){
+  try { localStorage.setItem('sm_staged_backup', JSON.stringify(stagedChanges)); } catch(e){}
+}
+function restoreStagedIfAny(){
+  try {
+    const raw=localStorage.getItem('sm_staged_backup');
+    localStorage.removeItem('sm_staged_backup');
+    if(!raw) return;
+    const arr=JSON.parse(raw);
+    if(Array.isArray(arr)&&arr.length){
+      stagedChanges=arr;
+      refreshDrawer();
+    }
+  } catch(e){}
+}
+
+// Same-tab OAuth: works even where popups are blocked (in-app browsers). Saves
+// staged changes + PKCE params to localStorage (sessionStorage can be dropped
+// across navigations in some in-app browsers), then redirects the whole page.
+// callback.html detects the same-tab flag and redirects back here on return.
+async function connectOSMSameTab(){
+  persistStaged();
+  const verifier  = generateRandom(64);
+  const challenge = await sha256(verifier);
+  const state     = generateRandom(16);
+  localStorage.setItem('pkce_verifier', verifier);
+  localStorage.setItem('pkce_state',    state);
+  localStorage.setItem('sm_oauth_sametab','1');
+  localStorage.removeItem('osm_oauth_result');
+  const params = new URLSearchParams({
+    response_type:'code', client_id:CLIENT_ID, redirect_uri:REDIRECT_URI,
+    scope:'write_api', state, code_challenge:challenge, code_challenge_method:'S256'
+  });
+  window.location.href = `${OSM_AUTH_URL}?${params}`;
+}
+
+// On page load, complete a same-tab login if we're returning from one.
+async function completeSameTabIfReturning(){
+  const flag=localStorage.getItem('sm_oauth_sametab');
+
+  // Result may arrive via localStorage OR via the URL hash fallback set by
+  // callback.html (#osm_auth=...). Prefer the hash if present, then clear it.
+  let raw=null, fromHash=false;
+  if(location.hash.startsWith('#osm_auth=')){
+    try { raw=decodeURIComponent(location.hash.slice('#osm_auth='.length)); fromHash=true; } catch(e){}
+    // strip the hash from the URL without reloading
+    history.replaceState(null,'',location.pathname+location.search);
+  }
+  if(!raw) raw=localStorage.getItem('osm_oauth_result');
+
+  console.log('[sametab] flag=',flag,' hasResult=',!!raw,' fromHash=',fromHash);
+  if(flag!=='1' && !raw) return;      // not a return trip
+  if(!raw){
+    if(flag==='1'){
+      console.warn('[sametab] returned with flag set but no result');
+      showAuthError('Came back from OSM but the login result was missing. Please tap Connect and try again.');
+      localStorage.removeItem('sm_oauth_sametab');
+    }
+    return;
+  }
+  localStorage.removeItem('sm_oauth_sametab');
+  localStorage.removeItem('osm_oauth_result');
+
+  restoreStagedIfAny();  // bring back changes staged before the redirect
+
+  let result;
+  try { result=JSON.parse(raw); } catch(e){ showAuthError('Invalid callback data: '+raw); return; }
+  if(result.error){ showAuthError('OSM auth error: '+result.error); return; }
+  if(!result.code){ showAuthError('No authorization code returned from OSM.'); return; }
+
+  const storedState=localStorage.getItem('pkce_state');
+  console.log('[sametab] state check: got=',result.state,' expected=',storedState);
+  if(result.state!==storedState){
+    showAuthError(`State mismatch after redirect (got ${result.state||'∅'}, expected ${storedState||'∅'}). Tap Connect to retry.`);
+    return;
+  }
+  const verifier=localStorage.getItem('pkce_verifier');
+  if(!verifier){ showAuthError('Login verifier was lost during redirect. Tap Connect to retry.'); return; }
+  localStorage.removeItem('pkce_verifier');
+  localStorage.removeItem('pkce_state');
+
+  const lbl=document.getElementById('auth-label');
+  if(lbl) lbl.textContent='Exchanging token…';
+  console.log('[sametab] exchanging code…');
+  const token=await exchangeCode(result.code, verifier);
+  if(token){ osmToken=token; setAuthConnected(); console.log('[sametab] connected ✓'); }
+  else { console.warn('[sametab] token exchange returned null'); }
+}
+
 async function connectOSM() {
   if (osmToken) return; // already connected
 
@@ -495,7 +585,10 @@ async function connectOSM() {
   // its URL after the async PKCE work completes.
   const popup = window.open('', 'osm_auth', 'width=600,height=700,left=200,top=100');
   if (!popup) {
-    showAuthError('Login pop-up was blocked. In Safari: tap the "aA" button in the address bar → Website Settings → turn OFF "Block Pop-ups" for this site, then tap Connect again. (If you are inside an in-app browser, open the site in Safari instead.)');
+    // Popup blocked (common in iOS in-app browsers). Fall back to same-tab login,
+    // which always works. Staged changes are saved and restored automatically.
+    const go = confirm('Your browser blocked the OSM login pop-up.\n\nTap OK to sign in on this page instead — your staged changes will be saved and restored automatically.');
+    if (go) connectOSMSameTab();
     return;
   }
   // Give the user something to look at while we prepare the auth URL.
@@ -507,6 +600,12 @@ async function connectOSM() {
 
   sessionStorage.setItem('pkce_verifier', verifier);
   sessionStorage.setItem('pkce_state',    state);
+  // Also mirror to localStorage: some iOS in-app browsers ignore window.open and
+  // navigate the main tab instead, turning this into a same-tab flow. In that
+  // case the page reloads on return and only localStorage survives, so the
+  // on-load completion can still finish the login.
+  localStorage.setItem('pkce_verifier', verifier);
+  localStorage.setItem('pkce_state',    state);
   localStorage.removeItem('osm_oauth_result'); // clear any stale result
 
   const params = new URLSearchParams({
@@ -549,6 +648,9 @@ async function connectOSM() {
       osmToken = token;
       sessionStorage.removeItem('pkce_verifier');
       sessionStorage.removeItem('pkce_state');
+      localStorage.removeItem('pkce_verifier');
+      localStorage.removeItem('pkce_state');
+      localStorage.removeItem('sm_oauth_sametab');
       setAuthConnected();
     } else {
       showAuthError('Token exchange returned null — check console for details');
@@ -614,10 +716,16 @@ function showAuthError(msg) {
 
 // ── MAP INIT ──────────────────────────────────────────────────────────────────
 window.onload = function() {
+  completeSameTabIfReturning();  // finish a same-tab login FIRST, before heavy init
   initMap();
   buildLegend();
   loadTanks();
 };
+// iOS can restore this page from the back-forward cache without firing onload,
+// which would skip the login completion. Cover that with pageshow.
+window.addEventListener('pageshow', function(e){
+  if(e.persisted) completeSameTabIfReturning();
+});
 
 function initMap() {
   map = L.map('map', { center:[33.0,44.4], zoom:6, zoomControl:true, maxZoom:19, minZoom:4 });

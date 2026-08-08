@@ -53,9 +53,13 @@ function finish(resultObj) {
     }, 1600);
   } else {
     // Same-tab flow: redirect back to the app, which completes login on load.
+    // Pass the result in the URL hash too, as a fallback in case localStorage
+    // doesn't survive the navigation on some in-app browsers. The hash is not
+    // sent to any server; the app reads and immediately clears it.
     statusEl.textContent = resultObj.error ? 'Authentication cancelled' : 'Authenticated ✓';
     detailEl.textContent = 'Returning to Storage Mapper…';
-    setTimeout(() => { window.location.replace(APP_URL); }, 700);
+    const hash = '#osm_auth=' + encodeURIComponent(JSON.stringify(resultObj));
+    setTimeout(() => { window.location.replace(APP_URL + hash); }, 500);
   }
 }
 
