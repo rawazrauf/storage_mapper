@@ -13,7 +13,7 @@ html, body { height: 100%; font-family: 'Plus Jakarta Sans', sans-serif; backgro
 #app { display: flex; flex-direction: column; height: 100vh; }
 
 /* HEADER */
-#header { height: 56px; flex-shrink: 0; background: #111827; border-bottom: 1px solid #1f2937; display: flex; align-items: center; padding: 0 16px; gap: 12px; z-index: 500; }
+#header { min-height: 56px; flex-shrink: 0; background: #111827; border-bottom: 1px solid #1f2937; display: flex; align-items: center; padding: 8px 16px; gap: 12px; z-index: 500; }
 .header-logo { display: flex; align-items: center; gap: 8px; }
 .logo-icon { width: 32px; height: 32px; border-radius: 8px; background: linear-gradient(135deg,#f59e0b,#b45309); display: flex; align-items: center; justify-content: center; }
 .logo-icon svg { width: 18px; height: 18px; }
@@ -69,6 +69,11 @@ html, body { height: 100%; font-family: 'Plus Jakarta Sans', sans-serif; backgro
 .loader-bar-fill { height: 100%; background: #f59e0b; border-radius: 2px; width: 10%; transition: width .3s; }
 @keyframes spin { to { transform: rotate(360deg); } }
 .spin { animation: spin .7s linear infinite; display: inline-block; }
+
+/* review filter */
+.review-select { width: 100%; background: #030712; border: 1px solid #1f2937; border-radius: 8px; color: #f3f4f6; font-family: inherit; font-size: 12px; font-weight: 700; padding: 9px 10px; cursor: pointer; appearance: none; -webkit-appearance: none; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' fill='none' stroke='%23f59e0b' stroke-width='2.5' viewBox='0 0 24 24'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' d='M6 9l6 6 6-6'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 10px center; }
+.review-select:focus { outline: none; border-color: rgba(245,158,11,.5); }
+.filter-count { font-size: 10px; color: #6b7280; margin-top: 6px; font-family: monospace; }
 
 /* basemap */
 .basemap-list { background: #030712; border: 1px solid #1f2937; border-radius: 8px; overflow: hidden; }
@@ -200,10 +205,16 @@ kbd { background: #1f2937; color: #d1d5db; font-family: monospace; font-size: 10
   #peek-btn { display: none !important; }
   /* Show mobile map buttons */
   #mobile-map-btns { display: flex; }
-  /* Compact header */
-  #header h1 { font-size: 13px; }
-  #auth-label { display: none; }
-  #auth-badge { padding: 5px 8px; }
+  /* Compact header — keep everything on one row, no clipping */
+  #header { padding: 8px 10px; gap: 6px; }
+  #header h1 { display: none; }              /* hide title text, keep logo icon */
+  #auth-label { display: none; }             /* icon-only auth badge */
+  #auth-icon { display: inline !important; }
+  #auth-badge { padding: 6px 8px; }
+  .header-btns { gap: 6px; }
+  #btn-staged, #btn-submit { padding: 6px 9px; font-size: 11px; }
+  #btn-submit-label-full { display: none; }  /* "Submit to OSM" -> "Submit" */
+  #btn-submit-label-short { display: inline; }
   /* Chips wrap */
   #chip-list { flex-wrap: wrap; }
   /* Larger touch targets in popup */
@@ -236,12 +247,13 @@ kbd { background: #1f2937; color: #d1d5db; font-family: monospace; font-size: 10
   <div class="header-btns">
     <div id="auth-badge" onclick="connectOSM()">
       <span class="dot"></span>
+      <svg id="auth-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="display:none"><path d="M18 8h1a4 4 0 010 8h-1M2 12h13a4 4 0 010 8H8"/><path d="M2 8h9a4 4 0 010 8H2"/></svg>
       <span id="auth-label">Connect to OSM</span>
     </div>
     <button id="btn-staged" class="btn btn-ghost" onclick="toggleStagedDrawer()" disabled style="opacity:.4">
       Staged <span id="header-count" class="badge-dim">0</span>
     </button>
-    <button id="btn-submit" class="btn btn-amber" onclick="openModal()" disabled style="opacity:.4">Submit to OSM</button>
+    <button id="btn-submit" class="btn btn-amber" onclick="openModal()" disabled style="opacity:.4"><span id="btn-submit-label-full">Submit to OSM</span><span id="btn-submit-label-short" style="display:none">Submit</span></button>
   </div>
 </div>
 
@@ -274,6 +286,20 @@ kbd { background: #1f2937; color: #d1d5db; font-family: monospace; font-size: 10
           <div class="stat-card"><span class="sk">Tagged</span><span class="sv sv-green" id="stat-tagged">—</span></div>
           <div class="stat-card"><span class="sk">Untagged</span><span class="sv sv-red" id="stat-untagged">—</span></div>
         </div>
+      </div>
+      <div class="section">
+        <div class="section-label">Review Filter</div>
+        <select id="review-filter" onchange="setReviewFilter(this.value)" class="review-select">
+          <option value="all">All tanks</option>
+          <option value="untagged">Untagged only</option>
+          <option value="oil">Oil</option>
+          <option value="fuel">Fuel</option>
+          <option value="gas">Gas</option>
+          <option value="LNG">LNG</option>
+          <option value="LPG">LPG</option>
+          <option value="water">Water</option>
+        </select>
+        <div id="filter-count" class="filter-count">— tanks match</div>
       </div>
       <div id="loader-box">
         <div class="loader-row">
@@ -330,6 +356,10 @@ kbd { background: #1f2937; color: #d1d5db; font-family: monospace; font-size: 10
   <button class="mob-map-btn" id="mob-peek-btn" onclick="handleMobPeek(event)">
     <svg width="16" height="16" fill="none" stroke="#f59e0b" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>
     <span id="mob-peek-label">Peek</span>
+  </button>
+  <button class="mob-map-btn" onclick="handleMobFilter(event)">
+    <svg width="16" height="16" fill="none" stroke="#60a5fa" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M22 3H2l8 9.46V19l4 2v-8.54L22 3z"/></svg>
+    <span id="mob-filter-label">All</span>
   </button>
   <button class="mob-map-btn" onclick="handleMobNext(event)">
     <svg width="16" height="16" fill="none" stroke="#4ade80" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M13 7l5 5m0 0l-5 5m5-5H6"/></svg>
@@ -401,6 +431,8 @@ let drawerOpen = false;
 let peekActive = false;
 let osmToken = null;
 let currentBaseMapIdx = 0;
+let reviewFilter = 'all';   // 'all' | 'untagged' | oil | fuel | gas | LNG | LPG | water
+let lastReviewedId = null;  // for sequential "next" ordering
 
 // ── PKCE HELPERS ──────────────────────────────────────────────────────────────
 function generateRandom(len) {
@@ -1020,6 +1052,7 @@ function updateStats(){
   document.getElementById('stat-total').textContent=total;
   document.getElementById('stat-tagged').textContent=tagged;
   document.getElementById('stat-untagged').textContent=total-tagged;
+  updateFilterCount();
 }
 function buildLegend(){
   const list=document.getElementById('legend-list');
@@ -1032,13 +1065,68 @@ function buildLegend(){
   });
 }
 
+// ── REVIEW FILTER ─────────────────────────────────────────────────────────────
+// Does a tank match the currently-selected review filter?
+function matchesFilter(el){
+  const content=(el.tags||{}).content;
+  if(reviewFilter==='all')      return true;
+  if(reviewFilter==='untagged') return !content;
+  return content===reviewFilter;   // specific content type
+}
+
+function setReviewFilter(val){
+  reviewFilter=val;
+  lastReviewedId=null;             // restart the sequence for the new filter
+  updateFilterCount();
+  // keep the mobile pill label in sync
+  const pill=document.getElementById('mob-filter-label');
+  if(pill){
+    const labels={all:'All',untagged:'Untagged',oil:'Oil',fuel:'Fuel',gas:'Gas',LNG:'LNG',LPG:'LPG',water:'Water'};
+    pill.textContent=labels[val]||'All';
+  }
+}
+
+function updateFilterCount(){
+  const el=document.getElementById('filter-count');
+  if(!el) return;
+  if(!tankFeatures.length){ el.textContent='— tanks match'; return; }
+  const matching=tankFeatures.filter(matchesFilter).length;
+  const remaining=tankFeatures.filter(el=>matchesFilter(el)&&!getStagedChange(el.type,el.id)&&!(el.tags||{}).check_date).length;
+  el.textContent=`${matching} match · ${remaining} unreviewed`;
+}
+
 // ── NEXT UNREVIEWED ───────────────────────────────────────────────────────────
+// Sequential, filter-aware. Prefers tanks matching the filter that are neither
+// staged nor already checked; walks them in a stable geographic order (by lat
+// then lng) starting after the last-reviewed tank, so review is consistent.
 function nextUnreviewedTank(){
   if(!tankFeatures.length) return;
-  let pool=tankFeatures.filter(el=>!getStagedChange(el.type,el.id)&&!(el.tags||{}).check_date);
-  if(!pool.length) pool=tankFeatures.filter(el=>!getStagedChange(el.type,el.id));
-  if(!pool.length) return;
-  const el=pool[Math.floor(Math.random()*pool.length)];
+
+  // Primary pool: matches filter, not staged, not yet checked.
+  let pool=tankFeatures.filter(el=>matchesFilter(el)&&!getStagedChange(el.type,el.id)&&!(el.tags||{}).check_date);
+  // Fallback 1: matches filter, just not staged (allow re-review of checked ones).
+  if(!pool.length) pool=tankFeatures.filter(el=>matchesFilter(el)&&!getStagedChange(el.type,el.id));
+  // Fallback 2: anything matching the filter at all.
+  if(!pool.length) pool=tankFeatures.filter(matchesFilter);
+
+  if(!pool.length){
+    alert(reviewFilter==='all'
+      ? 'No unreviewed tanks left.'
+      : `No tanks left to review for filter "${reviewFilter}".`);
+    return;
+  }
+
+  // Stable ordering: north→south, then west→east.
+  pool.sort((a,b)=> (b._lat-a._lat) || (a._lng-b._lng));
+
+  // Pick the next one after the last reviewed tank; wrap around at the end.
+  let el=pool[0];
+  if(lastReviewedId!=null){
+    const idx=pool.findIndex(t=>t.id===lastReviewedId);
+    el = idx>=0 ? pool[(idx+1)%pool.length] : pool[0];
+  }
+  lastReviewedId=el.id;
+
   const isMobile=window.innerWidth<=1023;
   map.setView([el._lat,el._lng],Math.max(map.getZoom(),17));
   setTimeout(()=>openTankPopup(el), isMobile?600:300);
@@ -1050,6 +1138,13 @@ function handleMobPeek(e) {
 }
 function handleMobNext(e) {
   nextUnreviewedTank();
+}
+function handleMobFilter(e) {
+  const order=['all','untagged','oil','fuel','gas','LNG','LPG','water'];
+  const idx=order.indexOf(reviewFilter);
+  const next=order[(idx+1)%order.length];
+  setReviewFilter(next);
+  const sel=document.getElementById('review-filter'); if(sel) sel.value=next;  // keep sidebar in sync
 }
 
 // ── SIDEBAR TOGGLE ────────────────────────────────────────────────────────────
