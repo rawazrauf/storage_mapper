@@ -488,6 +488,19 @@ async function sha256(plain) {
 // ── OSM OAUTH 2.0 + PKCE ──────────────────────────────────────────────────────
 async function connectOSM() {
   if (osmToken) return; // already connected
+
+  // iOS Safari only permits window.open() synchronously inside the tap handler.
+  // Any `await` before it (e.g. the SHA-256 hash) makes Safari treat the popup
+  // as non-user-initiated and block it. So open the popup FIRST, then fill in
+  // its URL after the async PKCE work completes.
+  const popup = window.open('', 'osm_auth', 'width=600,height=700,left=200,top=100');
+  if (!popup) {
+    showAuthError('Login pop-up was blocked. In Safari: tap the "aA" button in the address bar → Website Settings → turn OFF "Block Pop-ups" for this site, then tap Connect again. (If you are inside an in-app browser, open the site in Safari instead.)');
+    return;
+  }
+  // Give the user something to look at while we prepare the auth URL.
+  try { popup.document.write('<!doctype html><meta name="viewport" content="width=device-width"><body style="font-family:-apple-system,sans-serif;background:#111827;color:#f59e0b;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;font-size:15px">Connecting to OpenStreetMap…</body>'); } catch(e){}
+
   const verifier  = generateRandom(64);
   const challenge = await sha256(verifier);
   const state     = generateRandom(16);
@@ -507,8 +520,9 @@ async function connectOSM() {
   });
 
   const authUrl = `${OSM_AUTH_URL}?${params}`;
-  const popup = window.open(authUrl, 'osm_auth', 'width=600,height=700,left=200,top=100');
-  if (!popup) { alert('Please allow popups for this site to connect to OSM.'); return; }
+  // Popup was opened synchronously above; now navigate it to the real auth URL.
+  if (popup.closed) { showAuthError('Login window was closed before it could load. Tap Connect again.'); return; }
+  popup.location.href = authUrl;
 
   // Poll localStorage for the result written by callback.html
   const pollInterval = setInterval(async () => {
