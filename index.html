@@ -2,18 +2,21 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
 <title>Storage Mapper</title>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <style>
 * { box-sizing: border-box; margin: 0; padding: 0; }
-html, body { height: 100%; font-family: 'Plus Jakarta Sans', sans-serif; background: #030712; color: #f3f4f6; overflow: hidden; }
-#app { display: flex; flex-direction: column; height: 100vh; }
+html, body { height: 100%; font-family: 'Plus Jakarta Sans', sans-serif; background: #111827; color: #f3f4f6; overflow: hidden; }
+/* Lock the app to the viewport so iOS rubber-band scroll can't reveal anything
+   above the header (was exposing the header buttons under the notch). */
+#app { display: flex; flex-direction: column; position: fixed; inset: 0; height: 100vh; height: 100dvh; overflow: hidden; }
 
 /* HEADER */
-#header { min-height: 56px; flex-shrink: 0; background: #111827; border-bottom: 1px solid #1f2937; display: flex; align-items: center; padding: 8px 16px; gap: 12px; z-index: 500; }
+#header { min-height: 56px; flex-shrink: 0; background: #111827; border-bottom: 1px solid #1f2937; display: flex; align-items: center; padding: 8px 16px; padding-top: max(8px, env(safe-area-inset-top)); gap: 12px; z-index: 500; }
 .header-logo { display: flex; align-items: center; gap: 8px; }
 .logo-icon { width: 32px; height: 32px; border-radius: 8px; background: linear-gradient(135deg,#f59e0b,#b45309); display: flex; align-items: center; justify-content: center; }
 .logo-icon svg { width: 18px; height: 18px; }
@@ -146,6 +149,23 @@ kbd { background: #1f2937; color: #d1d5db; font-family: monospace; font-size: 10
 .pu-action-btn:hover { opacity: .8; }
 .pill { border: 1px solid; border-radius: 4px; padding: 1px 8px; font-size: 11px; font-weight: 700; display: inline-block; }
 
+/* ALL OSM TAGS block */
+.pu-alltags { margin-bottom: 10px; border: 1px solid #374151; border-radius: 8px; background: #030712; overflow: hidden; }
+.pu-alltags summary { list-style: none; cursor: pointer; display: flex; align-items: center; justify-content: space-between; padding: 8px 10px; font-size: 9px; text-transform: uppercase; font-weight: 700; letter-spacing: .05em; color: #9ca3af; user-select: none; }
+.pu-alltags summary::-webkit-details-marker { display: none; }
+.pu-alltags summary:hover { color: #fff; }
+.pu-alltags-count { background: #1f2937; color: #9ca3af; font-family: monospace; font-size: 10px; padding: 1px 7px; border-radius: 10px; }
+.pu-alltags[open] summary { border-bottom: 1px solid #1f2937; }
+.pu-alltags-table { max-height: 180px; overflow-y: auto; padding: 4px 0; }
+.pu-tagrow { display: flex; gap: 8px; padding: 3px 10px; font-family: monospace; font-size: 10.5px; line-height: 1.4; }
+.pu-tagrow:hover { background: #111827; }
+.pu-tagk { color: #6b7280; flex-shrink: 0; max-width: 45%; overflow-wrap: anywhere; }
+.pu-tagv { color: #d1d5db; overflow-wrap: anywhere; }
+.pu-tagrow.notable .pu-tagk { color: #fbbf24; }
+.pu-tagrow.notable .pu-tagv { color: #fde68a; }
+.pu-osm-link { display: block; padding: 7px 10px; border-top: 1px solid #1f2937; font-size: 10px; font-weight: 700; color: #60a5fa; text-decoration: none; }
+.pu-osm-link:hover { color: #93c5fd; background: #111827; }
+
 /* MODAL */
 #modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,.7); z-index: 2000; align-items: center; justify-content: center; }
 #modal-box { background: #111827; border: 1px solid #374151; border-radius: 12px; width: 100%; max-width: 440px; margin: 16px; padding: 24px; }
@@ -183,15 +203,27 @@ kbd { background: #1f2937; color: #d1d5db; font-family: monospace; font-size: 10
   left: 50%;
   transform: translateX(-50%);
   z-index: 1500;
-  gap: 10px;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
 }
+#mob-btn-row { display: flex; gap: 10px; }
+#mob-coords {
+  background: #111827ee; border: 1px solid #374151;
+  color: #9ca3af; font-family: monospace; font-size: 12px; font-weight: 600;
+  padding: 5px 12px; border-radius: 10px;
+  box-shadow: 0 4px 12px rgba(0,0,0,.5);
+  white-space: nowrap; user-select: none; cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+#mob-coords.copied { color: #4ade80; border-color: rgba(74,222,128,.4); }
 
 @media (max-width: 1023px) {
   #mobile-menu-btn { display: block; }
   /* Sidebar slides in from left, starts below header */
   #sidebar {
     position: fixed;
-    top: 56px; /* below header */
+    top: calc(56px + env(safe-area-inset-top)); /* below header incl. safe area */
     left: 0; bottom: 0;
     z-index: 1200;
     transform: translateX(-100%);
@@ -201,12 +233,16 @@ kbd { background: #1f2937; color: #d1d5db; font-family: monospace; font-size: 10
   #sidebar.open { transform: translateX(0); }
   #drawer-backdrop { z-index: 1100; }
   #drawer-backdrop.open { display: block; }
-  /* Hide desktop Leaflet peek control on mobile */
+  /* Hide desktop Leaflet peek + coords controls on mobile (they overlap the
+     mobile bar and each other). Coordinates move into the mobile bar instead. */
   #peek-btn { display: none !important; }
-  /* Show mobile map buttons */
-  #mobile-map-btns { display: flex; }
+  #coords-display { display: none !important; }
+  /* Push Leaflet zoom control up so the centered mobile bar can't cover it */
+  .leaflet-bottom.leaflet-right { bottom: calc(84px + env(safe-area-inset-bottom)); }
+  /* Show mobile map buttons, lifted clear of the Safari toolbar / home bar */
+  #mobile-map-btns { display: flex; bottom: calc(20px + env(safe-area-inset-bottom)); }
   /* Compact header — keep everything on one row, no clipping */
-  #header { padding: 8px 10px; gap: 6px; }
+  #header { padding: 8px 10px; padding-top: max(8px, env(safe-area-inset-top)); gap: 6px; }
   #header h1 { display: none; }              /* hide title text, keep logo icon */
   #auth-label { display: none; }             /* icon-only auth badge */
   #auth-icon { display: inline !important; }
@@ -353,18 +389,21 @@ kbd { background: #1f2937; color: #d1d5db; font-family: monospace; font-size: 10
 
 <!-- MOBILE MAP BUTTONS — fixed overlay, shown only on mobile -->
 <div id="mobile-map-btns">
-  <button class="mob-map-btn" id="mob-peek-btn" onclick="handleMobPeek(event)">
-    <svg width="16" height="16" fill="none" stroke="#f59e0b" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>
-    <span id="mob-peek-label">Peek</span>
-  </button>
-  <button class="mob-map-btn" onclick="handleMobFilter(event)">
-    <svg width="16" height="16" fill="none" stroke="#60a5fa" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M22 3H2l8 9.46V19l4 2v-8.54L22 3z"/></svg>
-    <span id="mob-filter-label">All</span>
-  </button>
-  <button class="mob-map-btn" onclick="handleMobNext(event)">
-    <svg width="16" height="16" fill="none" stroke="#4ade80" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M13 7l5 5m0 0l-5 5m5-5H6"/></svg>
-    Next tank
-  </button>
+  <div id="mob-coords" onclick="copyMobCoords()">— , —</div>
+  <div id="mob-btn-row">
+    <button class="mob-map-btn" id="mob-peek-btn" onclick="handleMobPeek(event)">
+      <svg width="16" height="16" fill="none" stroke="#f59e0b" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>
+      <span id="mob-peek-label">Peek</span>
+    </button>
+    <button class="mob-map-btn" onclick="handleMobFilter(event)">
+      <svg width="16" height="16" fill="none" stroke="#60a5fa" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M22 3H2l8 9.46V19l4 2v-8.54L22 3z"/></svg>
+      <span id="mob-filter-label">All</span>
+    </button>
+    <button class="mob-map-btn" onclick="handleMobNext(event)">
+      <svg width="16" height="16" fill="none" stroke="#4ade80" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M13 7l5 5m0 0l-5 5m5-5H6"/></svg>
+      Next tank
+    </button>
+  </div>
 </div>
 
 <!-- SUBMIT MODAL -->
@@ -641,6 +680,16 @@ function initMap() {
 
   new PeekControl().addTo(map);
 
+  // Mobile coords chip: shows the map-centre coordinate (no cursor on touch).
+  function updateMobCoords(){
+    const el=document.getElementById('mob-coords');
+    if(!el) return;
+    const c=map.getCenter();
+    el.textContent=c.lat.toFixed(5)+', '+c.lng.toFixed(5);
+  }
+  map.on('move', updateMobCoords);
+  updateMobCoords();
+
   document.addEventListener('keydown', e => {
     if (['INPUT','TEXTAREA'].includes(document.activeElement.tagName)) return;
     if (e.code==='Space') { e.preventDefault(); togglePeek(); }
@@ -862,6 +911,36 @@ function openTankPopup(el) {
     box.innerHTML='No <code style="color:#f59e0b">content=*</code> tag yet'; wrap.appendChild(box);
   }
 
+  // ── All OSM tags (collapsible) ──────────────────────────────────────────────
+  // Shows the complete tag set as returned by Overpass so the mapper can judge
+  // whether the existing tagging (e.g. water_tank=clarifier, substance, etc.)
+  // is correct before changing content.
+  const allTags=el.tags||{};
+  const tagKeys=Object.keys(allTags).sort();
+  if(tagKeys.length){
+    const details=document.createElement('details'); details.className='pu-alltags';
+    const summary=document.createElement('summary');
+    summary.innerHTML=`<span>All OSM tags</span><span class="pu-alltags-count">${tagKeys.length}</span>`;
+    details.appendChild(summary);
+    const table=document.createElement('div'); table.className='pu-alltags-table';
+    // keys that are "expected/handled" — everything else is highlighted as noteworthy
+    const routine=new Set(['man_made','content','check_date','name','name:en','name:ar','name:ckb','operator','capacity']);
+    tagKeys.forEach(k=>{
+      const row=document.createElement('div'); row.className='pu-tagrow'+(routine.has(k)?'':' notable');
+      const kEl=document.createElement('span'); kEl.className='pu-tagk'; kEl.textContent=k;
+      const vEl=document.createElement('span'); vEl.className='pu-tagv'; vEl.textContent=allTags[k];
+      row.appendChild(kEl); row.appendChild(vEl); table.appendChild(row);
+    });
+    details.appendChild(table);
+    // link straight to the OSM element page for the full authoritative view / history
+    const link=document.createElement('a');
+    link.href=`https://www.openstreetmap.org/${el.type}/${el.id}`;
+    link.target='_blank'; link.rel='noopener'; link.className='pu-osm-link';
+    link.textContent='View on openstreetmap.org ↗';
+    details.appendChild(link);
+    wrap.appendChild(details);
+  }
+
   const gl=document.createElement('div'); gl.className='pu-grid-label';
   gl.textContent=(content||staged)?'Change content':'Set content'; wrap.appendChild(gl);
 
@@ -903,7 +982,7 @@ function openTankPopup(el) {
   actions.appendChild(makeBtn('⚑ Not a tank','rgba(249,115,22,.1)','#f97316','rgba(249,115,22,.3)',()=>stageFixme(el.type,el.id,name||'')));
   wrap.appendChild(actions);
 
-  L.popup({maxWidth:340,closeButton:true,autoPan:true}).setLatLng([el._lat,el._lng]).setContent(wrap).openOn(map);
+  L.popup({maxWidth:340,closeButton:true,autoPan:true,autoPanPaddingTopLeft:[10,90],autoPanPaddingBottomRight:[10,120],keepInView:true}).setLatLng([el._lat,el._lng]).setContent(wrap).openOn(map);
 }
 
 function selectContent(elId,val,color){
@@ -1145,6 +1224,16 @@ function handleMobFilter(e) {
   const next=order[(idx+1)%order.length];
   setReviewFilter(next);
   const sel=document.getElementById('review-filter'); if(sel) sel.value=next;  // keep sidebar in sync
+}
+function copyMobCoords(){
+  const el=document.getElementById('mob-coords');
+  if(!el) return;
+  const txt=el.textContent;
+  if(txt==='— , —') return;
+  navigator.clipboard.writeText(txt).then(()=>{
+    el.classList.add('copied');
+    setTimeout(()=>el.classList.remove('copied'),800);
+  }).catch(()=>{});
 }
 
 // ── SIDEBAR TOGGLE ────────────────────────────────────────────────────────────
