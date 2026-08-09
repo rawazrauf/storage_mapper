@@ -149,6 +149,12 @@ kbd { background: #1f2937; color: #d1d5db; font-family: monospace; font-size: 10
 .pu-action-btn:hover { opacity: .8; }
 .pill { border: 1px solid; border-radius: 4px; padding: 1px 8px; font-size: 11px; font-weight: 700; display: inline-block; }
 
+/* live-verify banner */
+.pu-verify { border-radius: 8px; padding: 8px 10px; font-size: 11px; line-height: 1.4; margin-bottom: 10px; }
+.pu-verify.warn { background: rgba(245,158,11,.12); border: 1px solid rgba(245,158,11,.4); color: #fcd34d; }
+.pu-verify.info { background: rgba(96,165,250,.12); border: 1px solid rgba(96,165,250,.4); color: #93c5fd; }
+.pu-verify b { color: #fff; }
+
 /* ALL OSM TAGS block */
 .pu-alltags { margin-bottom: 10px; border: 1px solid #374151; border-radius: 8px; background: #030712; overflow: hidden; }
 .pu-alltags summary { list-style: none; cursor: pointer; display: flex; align-items: center; justify-content: space-between; padding: 8px 10px; font-size: 9px; text-transform: uppercase; font-weight: 700; letter-spacing: .05em; color: #9ca3af; user-select: none; }
@@ -867,7 +873,15 @@ async function loadTanks() {
   const timer=setInterval(()=>{seconds+=.1;timerEl.textContent=seconds.toFixed(1)+'s';},100);
   const query=`[out:json][timeout:90];way["man_made"="storage_tank"](${IRAQ_BBOX});out geom tags;`;
   const fetchEP=async url=>{
-    const res=await fetch(url,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'data='+encodeURIComponent(query)});
+    // Cache-bust: append a unique nocache marker and set no-store so neither the
+    // browser nor an in-app WebView can replay a stale Overpass response. This is
+    // why an already-fixed tank could still show up days later.
+    const res=await fetch(url,{
+      method:'POST',
+      headers:{'Content-Type':'application/x-www-form-urlencoded'},
+      cache:'no-store',
+      body:'data='+encodeURIComponent(query)+'&nocache='+Date.now()
+    });
     if(!res.ok) throw new Error(res.status);
     const json=await res.json();
     if(!json.elements) throw new Error('no elements');
@@ -983,6 +997,35 @@ function refreshMarker(type,id) {
 }
 
 // ── POPUP ─────────────────────────────────────────────────────────────────────
+// Fetch a single element's CURRENT tags straight from the OSM API (not Overpass,
+// which can lag). Used to verify a tank when its popup opens, so review always
+// reflects ground truth even if the bulk Overpass load was behind replication.
+async function fetchLiveElement(type, id){
+  try {
+    const res=await fetch(`${OSM_API}/${type}/${id}`, {cache:'no-store'});
+    if(!res.ok) throw new Error(res.status);
+    const xml=await res.text();
+    const doc=new DOMParser().parseFromString(xml,'application/xml');
+    const elNode=doc.querySelector(type);
+    if(!elNode) throw new Error('element not found');
+    const tags={};
+    elNode.querySelectorAll('tag').forEach(t=>{ tags[t.getAttribute('k')]=t.getAttribute('v'); });
+    const version=elNode.getAttribute('version');
+    const visible=elNode.getAttribute('visible')!=='false';
+    return {tags, version, visible};
+  } catch(e){
+    console.warn('[live-verify] failed for',type,id,e.message);
+    return null;
+  }
+}
+
+// Compare two tag objects; return true if they differ.
+function tagsDiffer(a,b){
+  const ak=Object.keys(a||{}), bk=Object.keys(b||{});
+  if(ak.length!==bk.length) return true;
+  return ak.some(k=>a[k]!==b[k]);
+}
+
 function openTankPopup(el) {
   selectedContent=null;
   const tags=el.tags||{},content=tags.content,staged=getStagedChange(el.type,el.id);
@@ -1063,6 +1106,13 @@ function openTankPopup(el) {
     wrap.appendChild(details);
   }
 
+  // Live-verify banner: filled in asynchronously by verifyLive() below. Warns if
+  // the OSM API's current tags differ from the Overpass snapshot we loaded.
+  const verifyBanner=document.createElement('div');
+  verifyBanner.className='pu-verify'; verifyBanner.id='verify-'+el.id;
+  verifyBanner.style.display='none';
+  wrap.appendChild(verifyBanner);
+
   const gl=document.createElement('div'); gl.className='pu-grid-label';
   gl.textContent=(content||staged)?'Change content':'Set content'; wrap.appendChild(gl);
 
@@ -1105,6 +1155,35 @@ function openTankPopup(el) {
   wrap.appendChild(actions);
 
   L.popup({maxWidth:340,closeButton:true,autoPan:true,autoPanPaddingTopLeft:[10,90],autoPanPaddingBottomRight:[10,120],keepInView:true}).setLatLng([el._lat,el._lng]).setContent(wrap).openOn(map);
+
+  verifyLive(el);  // check current OSM state in the background
+}
+
+// Verify the tank against live OSM data and update the popup banner + cache.
+async function verifyLive(el){
+  const live=await fetchLiveElement(el.type, el.id);
+  const banner=document.getElementById('verify-'+el.id);
+  if(!live){ if(banner){ banner.style.display='block'; banner.className='pu-verify warn'; banner.textContent='Could not verify against live OSM (offline or API error).'; } return; }
+
+  // Element deleted, or no longer a storage tank → it shouldn't be in review.
+  const stillTank = live.visible && live.tags.man_made==='storage_tank';
+  const changed = tagsDiffer(el.tags||{}, live.tags);
+
+  // Update our cached snapshot so colours/labels reflect reality this session.
+  if(changed){ el.tags=live.tags; refreshMarker(el.type, el.id); updateStats(); }
+
+  if(!banner) return;
+  if(!live.visible){
+    banner.style.display='block'; banner.className='pu-verify warn';
+    banner.innerHTML='⚠ This element was <b>deleted</b> on OSM. It no longer needs review.';
+  } else if(!stillTank){
+    banner.style.display='block'; banner.className='pu-verify warn';
+    const mm=live.tags.man_made||'(none)';
+    banner.innerHTML=`⚠ On OSM this is now <b>man_made=${mm}</b>, not a storage_tank. You likely already retagged it — no action needed.`;
+  } else if(changed){
+    banner.style.display='block'; banner.className='pu-verify info';
+    banner.innerHTML='↻ Tags updated from live OSM (the loaded data was slightly behind).';
+  }
 }
 
 function selectContent(elId,val,color){
