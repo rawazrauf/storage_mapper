@@ -21,6 +21,7 @@ html, body { height: 100%; font-family: 'Plus Jakarta Sans', sans-serif; backgro
 .logo-icon { width: 32px; height: 32px; border-radius: 8px; background: linear-gradient(135deg,#f59e0b,#b45309); display: flex; align-items: center; justify-content: center; }
 .logo-icon svg { width: 18px; height: 18px; }
 #header h1 { font-size: 15px; font-weight: 800; color: #fff; white-space: nowrap; }
+#build-tag { font-size: 9px; font-weight: 700; color: #6b7280; background: #1f2937; padding: 2px 6px; border-radius: 6px; margin-left: 6px; font-family: monospace; letter-spacing: .02em; vertical-align: middle; }
 .header-spacer { flex: 1; }
 .header-btns { display: flex; gap: 8px; align-items: center; }
 
@@ -250,6 +251,7 @@ kbd { background: #1f2937; color: #d1d5db; font-family: monospace; font-size: 10
   /* Compact header — keep everything on one row, no clipping */
   #header { padding: 8px 10px; padding-top: max(8px, env(safe-area-inset-top)); gap: 6px; }
   #header h1 { display: none; }              /* hide title text, keep logo icon */
+  #build-tag { display: inline-block !important; } /* keep build number visible on mobile */
   #auth-label { display: none; }             /* icon-only auth badge */
   #auth-icon { display: inline !important; }
   #auth-badge { padding: 6px 8px; }
@@ -284,6 +286,7 @@ kbd { background: #1f2937; color: #d1d5db; font-family: monospace; font-size: 10
       <svg fill="none" stroke="white" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M20 7H4a2 2 0 00-2 2v6a2 2 0 002 2h16a2 2 0 002-2V9a2 2 0 00-2-2zM8 7V5a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>
     </div>
     <h1>Storage Mapper</h1>
+    <span id="build-tag" title="Deployed build — if this is stale, you're on a cached copy">build …</span>
   </div>
   <div class="header-spacer"></div>
   <div class="header-btns">
@@ -321,6 +324,11 @@ kbd { background: #1f2937; color: #d1d5db; font-family: monospace; font-size: 10
   <!-- SIDEBAR -->
   <div id="sidebar">
     <div id="sidebar-scroll">
+      <div class="section">
+        <div class="section-label">Country</div>
+        <select id="country-select" onchange="setCountry(this.value)" class="review-select"></select>
+        <div class="filter-count">Tanks are clipped to this country's borders.</div>
+      </div>
       <div class="section">
         <div class="section-label">Stats</div>
         <div class="stats-grid">
@@ -433,16 +441,39 @@ kbd { background: #1f2937; color: #d1d5db; font-family: monospace; font-size: 10
 
 <script>
 // ── CONFIG ────────────────────────────────────────────────────────────────────
+// ── BUILD VERSION ─────────────────────────────────────────────────────────────
+// Bump this string on every commit. It's shown in the header and logged to the
+// console so you can tell at a glance whether the browser is serving a cached
+// copy or the file you just deployed.
+const BUILD = '2026-08-09.2';
+
+// ── COUNTRIES ─────────────────────────────────────────────────────────────────
+// Each entry: OSM boundary relation id (area id = relation id + 3600000000), a
+// map centre [lat,lng] and a default zoom. Iraq is the default. To add a country,
+// look up its boundary relation on openstreetmap.org and add a line here.
+const COUNTRIES = {
+  iraq:         { name: 'Iraq',         rel: 304934,  center: [33.0, 43.7], zoom: 6 },
+  syria:        { name: 'Syria',        rel: 184840,  center: [35.0, 38.5], zoom: 6 },
+  iran:         { name: 'Iran',         rel: 304938,  center: [32.5, 53.7], zoom: 5 },
+  turkey:       { name: 'Turkey',       rel: 174737,  center: [39.0, 35.2], zoom: 5 },
+  kuwait:       { name: 'Kuwait',       rel: 305099,  center: [29.3, 47.6], zoom: 8 },
+  saudi_arabia: { name: 'Saudi Arabia', rel: 307584,  center: [24.0, 45.0], zoom: 5 },
+  jordan:       { name: 'Jordan',       rel: 184818,  center: [31.2, 36.5], zoom: 7 },
+  uae:          { name: 'UAE',          rel: 307763,  center: [24.0, 54.0], zoom: 7 },
+};
+const DEFAULT_COUNTRY = 'iraq';
+// Current selection, restored from localStorage if present.
+let currentCountry = (function(){
+  try { const c=localStorage.getItem('sm_country'); if(c && COUNTRIES[c]) return c; } catch(e){}
+  return DEFAULT_COUNTRY;
+})();
+function countryAreaId(key){ return 3600000000 + COUNTRIES[key].rel; }
+
 const CLIENT_ID     = 'WM1LjRiFDmlX6mWBelInwtsokEBriPcotXrN0VNMhTk';
 const REDIRECT_URI  = 'https://rawazrauf.github.io/storage_mapper/callback.html';
 const OSM_AUTH_URL  = 'https://www.openstreetmap.org/oauth2/authorize';
 const OSM_TOKEN_URL = 'https://www.openstreetmap.org/oauth2/token';
 const OSM_API       = 'https://api.openstreetmap.org/api/0.6';
-const IRAQ_BBOX     = '29.0,38.8,37.5,48.8';
-// Iraq's OSM boundary relation is 304934; Overpass area id = relation id + 3600000000.
-// Used to clip results to Iraq's actual borders (the bbox alone spills into Syria,
-// Iran, Turkey, Kuwait and Saudi Arabia at the corners).
-const IRAQ_AREA_ID  = 3600304934;
 const OVERPASS_ENDPOINTS = [
   'https://overpass-api.de/api/interpreter',
   'https://overpass.kumi.systems/api/interpreter',
@@ -726,6 +757,12 @@ function showAuthError(msg) {
 
 // ── MAP INIT ──────────────────────────────────────────────────────────────────
 window.onload = function() {
+  // Show build version so it's obvious whether this is cached or freshly deployed.
+  const bt=document.getElementById('build-tag'); if(bt) bt.textContent='build '+BUILD;
+  document.title='Storage Mapper — '+BUILD;
+  console.log('%cStorage Mapper build '+BUILD, 'color:#f59e0b;font-weight:700');
+  populateCountryDropdown();
+
   completeSameTabIfReturning();  // finish a same-tab login FIRST, before heavy init
   initMap();
   buildLegend();
@@ -738,7 +775,8 @@ window.addEventListener('pageshow', function(e){
 });
 
 function initMap() {
-  map = L.map('map', { center:[33.0,44.4], zoom:6, zoomControl:true, maxZoom:19, minZoom:4 });
+  const c0=COUNTRIES[currentCountry]||COUNTRIES[DEFAULT_COUNTRY];
+  map = L.map('map', { center:c0.center, zoom:c0.zoom, zoomControl:true, maxZoom:19, minZoom:4 });
   map.zoomControl.setPosition('bottomright');
 
   baseLayers.satellite = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
@@ -875,10 +913,9 @@ async function loadTanks() {
   loaderBar.style.width='15%';
   let seconds=0;
   const timer=setInterval(()=>{seconds+=.1;timerEl.textContent=seconds.toFixed(1)+'s';},100);
-  // Clip to Iraq's administrative area, not just the bounding box. The bbox is
-  // kept as a fast pre-filter; the (area.iraq) constraint removes tanks that fall
-  // in neighbouring countries at the rectangle's edges.
-  const query=`[out:json][timeout:120];area(${IRAQ_AREA_ID})->.iraq;way["man_made"="storage_tank"](area.iraq);out geom tags;`;
+  // Clip to the selected country's administrative area, not just a bounding box.
+  const areaId = countryAreaId(currentCountry);
+  const query=`[out:json][timeout:120];area(${areaId})->.searchArea;way["man_made"="storage_tank"](area.searchArea);out geom tags;`;
   const fetchEP=async url=>{
     // Cache-bust: append a unique nocache marker and set no-store so neither the
     // browser nor an in-app WebView can replay a stale Overpass response. This is
@@ -921,7 +958,7 @@ async function loadTanks() {
   }
   tankFeatures=data.elements.filter(el=>el.geometry&&el.geometry.length>=3&&circularity(el.geometry)>=0.75);
   loaderBar.style.width='100%';
-  loaderTxt.textContent=`Loaded ${tankFeatures.length} tank polygons`;
+  loaderTxt.textContent=`Loaded ${tankFeatures.length} tank polygons in ${COUNTRIES[currentCountry].name}`;
   setTimeout(()=>{loaderBox.style.display='none';},1500);
   renderTanks(); updateStats();
 }
@@ -1359,6 +1396,35 @@ function matchesFilter(el){
   if(reviewFilter==='all')      return true;
   if(reviewFilter==='untagged') return !content;
   return content===reviewFilter;   // specific content type
+}
+
+// ── COUNTRY SELECTION ─────────────────────────────────────────────────────────
+function populateCountryDropdown(){
+  const sel=document.getElementById('country-select');
+  if(!sel) return;
+  sel.innerHTML='';
+  Object.keys(COUNTRIES).forEach(key=>{
+    const o=document.createElement('option');
+    o.value=key; o.textContent=COUNTRIES[key].name;
+    if(key===currentCountry) o.selected=true;
+    sel.appendChild(o);
+  });
+}
+
+function setCountry(key){
+  if(!COUNTRIES[key] || key===currentCountry) return;
+  // Warn if there are unsaved staged changes — switching reloads the tank set.
+  if(stagedChanges.length){
+    const ok=confirm(`You have ${stagedChanges.length} unsaved staged change(s). Switching country will keep them staged, but you'll be looking at ${COUNTRIES[key].name}. Continue?`);
+    if(!ok){ const sel=document.getElementById('country-select'); if(sel) sel.value=currentCountry; return; }
+  }
+  currentCountry=key;
+  try { localStorage.setItem('sm_country', key); } catch(e){}
+  // Recentre the map and reload tanks for the new country.
+  const c=COUNTRIES[key];
+  if(map) map.setView(c.center, c.zoom);
+  lastReviewedId=null;
+  loadTanks();
 }
 
 function setReviewFilter(val){
