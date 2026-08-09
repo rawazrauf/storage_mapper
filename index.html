@@ -439,6 +439,10 @@ const OSM_AUTH_URL  = 'https://www.openstreetmap.org/oauth2/authorize';
 const OSM_TOKEN_URL = 'https://www.openstreetmap.org/oauth2/token';
 const OSM_API       = 'https://api.openstreetmap.org/api/0.6';
 const IRAQ_BBOX     = '29.0,38.8,37.5,48.8';
+// Iraq's OSM boundary relation is 304934; Overpass area id = relation id + 3600000000.
+// Used to clip results to Iraq's actual borders (the bbox alone spills into Syria,
+// Iran, Turkey, Kuwait and Saudi Arabia at the corners).
+const IRAQ_AREA_ID  = 3600304934;
 const OVERPASS_ENDPOINTS = [
   'https://overpass-api.de/api/interpreter',
   'https://overpass.kumi.systems/api/interpreter',
@@ -871,7 +875,10 @@ async function loadTanks() {
   loaderBar.style.width='15%';
   let seconds=0;
   const timer=setInterval(()=>{seconds+=.1;timerEl.textContent=seconds.toFixed(1)+'s';},100);
-  const query=`[out:json][timeout:90];way["man_made"="storage_tank"](${IRAQ_BBOX});out geom tags;`;
+  // Clip to Iraq's administrative area, not just the bounding box. The bbox is
+  // kept as a fast pre-filter; the (area.iraq) constraint removes tanks that fall
+  // in neighbouring countries at the rectangle's edges.
+  const query=`[out:json][timeout:120];area(${IRAQ_AREA_ID})->.iraq;way["man_made"="storage_tank"](area.iraq);out geom tags;`;
   const fetchEP=async url=>{
     // Cache-bust: append a unique nocache marker and set no-store so neither the
     // browser nor an in-app WebView can replay a stale Overpass response. This is
