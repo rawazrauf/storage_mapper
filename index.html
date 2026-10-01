@@ -363,7 +363,7 @@ const REDIRECT_URI  = 'https://rawazrauf.github.io/storage_mapper/callback.html'
 const OSM_AUTH_URL  = 'https://www.openstreetmap.org/oauth2/authorize';
 const OSM_TOKEN_URL = 'https://www.openstreetmap.org/oauth2/token';
 const OSM_API       = 'https://api.openstreetmap.org/api/0.6';
-const IRAQ_BBOX     = '29.0,38.8,37.5,48.8';
+const IRAQ_BBOX     = '29.5,38.8,37.4,48.6'; // tightened; Overpass also filters by Iraq area
 const OVERPASS_ENDPOINTS = [
   'https://overpass-api.de/api/interpreter',
   'https://overpass.kumi.systems/api/interpreter',
@@ -549,7 +549,10 @@ function initMap() {
   baseLayers.satellite.addTo(map);
 
   fetch('https://raw.githubusercontent.com/johan/world.geo.json/master/countries/IRQ.geo.json')
-    .then(r=>r.json()).then(d=>L.geoJSON(d,{style:{color:'#f59e0b',weight:2,opacity:.4,fillOpacity:0,dashArray:'4,6'},interactive:false}).addTo(map))
+    .then(r=>r.json()).then(d=>{
+      L.geoJSON(d,{style:{color:'#f59e0b',weight:2,opacity:.4,fillOpacity:0,dashArray:'4,6'},interactive:false}).addTo(map);
+      window._iraqGeoJSON = d; // store for point-in-polygon filtering
+    })
     .catch(()=>{});
 
   // Peek control
@@ -662,7 +665,11 @@ async function loadTanks() {
   loaderBar.style.width='15%';
   let seconds=0;
   const timer=setInterval(()=>{seconds+=.1;timerEl.textContent=seconds.toFixed(1)+'s';},100);
-  const query=`[out:json][timeout:90];way["man_made"="storage_tank"](${IRAQ_BBOX});out geom tags;`;
+  // Filter by Iraq administrative boundary (relation 304945) to exclude cross-border tanks
+  const query=`[out:json][timeout:90];
+area["ISO3166-1"="IQ"][admin_level=2]->.iraq;
+way["man_made"="storage_tank"](area.iraq);
+out geom tags;`;
   const fetchEP=async url=>{
     const res=await fetch(url,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'data='+encodeURIComponent(query)});
     if(!res.ok) throw new Error(res.status);
@@ -695,7 +702,35 @@ async function loadTanks() {
     area=Math.abs(area)/2*(111320**2)*cosLat;
     return perim>0?(4*Math.PI*area)/(perim**2):0;
   }
-  tankFeatures=data.elements.filter(el=>el.geometry&&el.geometry.length>=3&&circularity(el.geometry)>=0.75);
+  let elements = data.elements.filter(el=>el.geometry&&el.geometry.length>=3&&circularity(el.geometry)>=0.75);
+
+  // Client-side point-in-polygon: remove any tank whose centroid falls outside Iraq
+  // Uses ray-casting against the Iraq GeoJSON border if available
+  function pointInIraq(lat, lng) {
+    if (!window._iraqGeoJSON) return true; // border not loaded yet, allow through
+    const coords = window._iraqGeoJSON.features[0].geometry.coordinates;
+    // Test against outer ring of each polygon
+    for (const poly of coords) {
+      const ring = Array.isArray(poly[0][0]) ? poly[0] : poly;
+      let inside = false;
+      for (let i=0, j=ring.length-1; i<ring.length; j=i++) {
+        const xi=ring[i][0], yi=ring[i][1], xj=ring[j][0], yj=ring[j][1];
+        if (((yi>lat)!==(yj>lat)) && (lng < (xj-xi)*(lat-yi)/(yj-yi)+xi)) inside=!inside;
+      }
+      if (inside) return true;
+    }
+    return false;
+  }
+
+  // Compute centroids first, then filter
+  elements.forEach(el => {
+    const lats=el.geometry.map(n=>n.lat), lngs=el.geometry.map(n=>n.lon);
+    el._lat=lats.reduce((a,b)=>a+b,0)/lats.length;
+    el._lng=lngs.reduce((a,b)=>a+b,0)/lngs.length;
+  });
+  tankFeatures = elements.filter(el => pointInIraq(el._lat, el._lng));
+  const excluded = elements.length - tankFeatures.length;
+  if (excluded > 0) console.log(`Excluded ${excluded} tanks outside Iraq border`);
   loaderBar.style.width='100%';
   loaderTxt.textContent=`Loaded ${tankFeatures.length} tank polygons`;
   setTimeout(()=>{loaderBox.style.display='none';},1500);
